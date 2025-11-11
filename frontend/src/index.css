@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --peacock-50: #f0fdfa;
+    --peacock-100: #ccfbf1;
+    --peacock-200: #99f6e4;
+    --peacock-300: #5eead4;
+    --peacock-400: #2dd4bf;
+    --peacock-500: #14b8a6; 
+    --peacock-600: #0d9488;
+    --peacock-700: #0f766e;
+    --peacock-800: #115e59;
+    --peacock-900: #134e4a;
+    --peacock-950: #000000;
+
+    --color-bg: var(--peacock-50);
+    --color-text: var(--peacock-900);
+  }
+
+  .dark {
+    --color-bg: var(--peacock-950);
+    --color-text: var(--peacock-50);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    transition: background-color 0.3s, color 0.3s;
+  }
+}
+
+@layer utilities {
+  .bg-peacock-500 {
+    background-color: var(--peacock-500);
+  }
+  .bg-peacock-600 {
+    background-color: var(--peacock-600);
+  }
+  .text-peacock-500 {
+    color: var(--peacock-500);
+  }
+  .text-peacock-600 {
+    color: var(--peacock-600);
+  }
+}
