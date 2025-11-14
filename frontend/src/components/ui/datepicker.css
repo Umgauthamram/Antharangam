@@ -1,0 +1,166 @@
+
+:root {
+  --dp-bg-color: var(--color-bg);
+  --dp-text-color: var(--color-text);
+  --dp-border-color: var(--color-border);
+  --dp-header-bg: var(--peacock-600);
+  --dp-header-text: #ffffff;
+  --dp-accent-color: var(--peacock-500);
+  --dp-accent-text: #ffffff;
+  --dp-hover-bg: var(--color-bg-subtle);
+  --dp-day-name-color: var(--color-text-secondary);
+}
+
+.dark {
+  --dp-bg-color: var(--color-bg-subtle);
+  --dp-text-color: black;
+  --dp-border-color: var(--color-border);
+
+  --dp-accent-color: var(--peacock-500);
+  --dp-accent-text: #ffffff;
+  --dp-hover-bg: var(--color-border);
+  --dp-day-name-color: var(--color-text-secondary);
+}
+
+/* ================================
+   📅 Main Calendar Container
+================================== */
+.react-datepicker {
+  font-family: inherit;
+  font-size: 0.9rem;
+  background-color: white;
+  color: black;
+  border: 1px solid var(--dp-border-color);
+  border-radius: 0.75rem; 
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.react-datepicker__header {
+  background-color: var(--dp-header-bg);
+  border-bottom: none;
+  padding-top: 10px;
+}
+
+.react-datepicker__current-month,
+.react-datepicker-year-header,
+.react-datepicker-time__header {
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  padding-bottom: 10px;
+}
+
+.react-datepicker__navigation-icon::before {
+  border-color: var(--dp-header-text);
+  opacity: 0.7;
+  border-width: 2px 2px 0 0;
+}
+
+.react-datepicker__navigation:hover .react-datepicker__navigation-icon::before {
+  opacity: 1;
+}
+
+.react-datepicker__day-name {
+  color: var(--dp-header-text);
+  font-weight: 600;
+  margin: 0.25rem;
+}
+
+.react-datepicker__day {
+  color: var(--dp-text-color);
+  border-radius: 9999px;
+  margin: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.react-datepicker__day:hover {
+  background-color: var(--dp-hover-bg);
+  border-radius: 9999px;
+}
+
+.react-datepicker__day:focus,
+.react-datepicker__day:active {
+  outline: none !important;
+  box-shadow: none !important;
+  background-color: var(--dp-hover-bg);
+}
+
+.react-datepicker__day--disabled {
+  opacity: 0.3;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: var(--dp-accent-color);
+  color: var(--dp-accent-text);
+  border-radius: 9999px;
+}
+
+.react-datepicker__day--selected:hover {
+  background-color: white;
+}
+
+.react-datepicker__day--in-range,
+.react-datepicker__day--in-selecting-range {
+  background-color: var(--peacock-100);
+  color: var(--peacock-900);
+  border-radius: 0;
+}
+
+.react-datepicker__day--range-start {
+  background-color: var(--dp-accent-color);
+  color: var(--dp-accent-text);
+  border-top-left-radius: 9999px;
+  border-bottom-left-radius: 9999px;
+}
+
+.react-datepicker__day--range-end {
+  background-color: var(--dp-accent-color);
+  color: var(--dp-accent-text);
+  border-top-right-radius: 9999px;
+  border-bottom-right-radius: 9999px;
+}
+
+.react-datepicker__year-dropdown,
+.react-datepicker__month-dropdown {
+  background-color: var(--dp-bg-color);
+  border: 1px solid var(--dp-border-color);
+  border-radius: 0.5rem;
+  overflow-y: visible !important;
+  max-height: none !important;
+  box-shadow: none !important;
+}
+
+.react-datepicker__year-option:hover,
+.react-datepicker__month-option:hover {
+  background-color: var(--dp-hover-bg);
+}
+
+.react-datepicker__year-option--selected,
+.react-datepicker__month-option--selected {
+  background-color: var(--dp-accent-color);
+  color: var(--dp-accent-text);
+}
+
+.react-datepicker__year-option--selected:hover,
+.react-datepicker__month-option--selected:hover {
+  background-color: var(--peacock-700);
+}
+
+.datepicker-input {
+  width: 100%;
+  padding: 0.75rem;
+  color: var(--color-text);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 0.375rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.datepicker-input:focus {
+  border-color: var(--peacock-500);
+  box-shadow: 0 0 0 1px var(--peacock-500);
+}

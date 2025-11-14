@@ -1,53 +1,14 @@
-// import React from 'react';
-// import KpiCard from '/src/components/dashboard/KpiCard.jsx';
-// import AlertTable from '/src/components/dashboard/AlertTable.jsx';
-// import { AlertTriangle, Briefcase, FileText, Clock } from 'lucide-react';
-
-// const MOCK_ALERTS = [
-//   { id: 1, severity: 'High', status: 'New', platform: 'X', content: "Selling illegal items, DM me. #buy #sell", timestamp: "2 mins ago", entities: ["phone", "keyword"] },
-//   { id: 2, severity: 'Critical', status: 'New', platform: 'Telegram', content: "Meeting at 5 PM, bring the package. UPI: example@upi", timestamp: "10 mins ago", entities: ["upi", "keyword"] },
-//   { id: 3, severity: 'Medium', status: 'New', platform: 'Dark Web', content: "New database for sale, 10 BTC. admin@onion...", timestamp: "45 mins ago", entities: ["crypto", "email"] },
-//   { id: 4, severity: 'Low', status: 'In Review', platform: 'X', content: "Just a regular post.", timestamp: "1 hour ago", entities: [] },
-//   { id: 5, severity: 'High', status: 'New', platform: 'X', content: "Contact 98XXXXXX10 for details.", timestamp: "2 hours ago", entities: ["phone"] },
-// ];
-
-// export default function Dashboard() {
-//   const kpiData = [
-//     { title: 'New Alerts (24h)', value: MOCK_ALERTS.length, icon: AlertTriangle, color: 'text-red-500' },
-//     { title: 'Cases Open', value: 3, icon: Briefcase, color: 'text-blue-500' },
-//     { title: 'Evidence Collected', value: 102, icon: FileText, color: 'text-peacock-500' },
-//     { title: 'Avg. Triage Time', value: '12m', icon: Clock, color: 'text-yellow-500' },
-//   ];
-
-//   return (
-//     <div>
-//       <h3 className="text-3xl font-medium text-primary">Dashboard</h3>
-
-//       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
-//         {kpiData.map((item, index) => (
-//           <KpiCard key={index} item={item} />
-//         ))}
-//       </div>
-
-//       <div className="mt-8">
-//         <AlertTable alerts={MOCK_ALERTS} />
-//       </div>
-//     </div>
-//   );
-// }
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import AlertTable from '/src/components/dashboard/AlertTable.jsx'; // Make sure this path is correct
+import AlertTable from '/src/components/dashboard/AlertTable.jsx'; 
+import { toast } from 'react-hot-toast';
 
-// --- Mock Data for Charts & Table ---
 const alertSeverityData = [
   { name: 'Critical', value: 12 },
   { name: 'High', value: 38 },
   { name: 'Medium', value: 89 },
   { name: 'Low', value: 140 },
 ];
-
 const alertPlatformData = [
   { name: 'X (Twitter)', value: 94 },
   { name: 'Telegram', value: 121 },
@@ -55,36 +16,53 @@ const alertPlatformData = [
   { name: 'Forums', value: 46 },
 ];
 
-const MOCK_ALERTS = [
-  { id: 1, severity: 'High', status: 'New', platform: 'X', content: "Selling illegal items, DM me. #buy #sell", timestamp: "2 mins ago", entities: ["phone", "keyword"] },
-  { id:2, severity: 'Critical', status: 'New', platform: 'Telegram', content: "Meeting at 5 PM, bring the package. UPI: example@upi", timestamp: "10 mins ago", entities: ["upi", "keyword"] },
-  { id: 3, severity: 'Medium', status: 'New', platform: 'Dark Web', content: "New database for sale, 10 BTC. admin@onion...", timestamp: "45 mins ago", entities: ["crypto", "email"] },
-  { id: 4, severity: 'Low', status: 'In Review', platform: 'X', content: "Just a regular post.", timestamp: "1 hour ago", entities: [] },
-  { id: 5, severity: 'High', status: 'New', platform: 'X', content: "Contact 98XXXXXX10 for details.", timestamp: "2 hours ago", entities: ["phone"] },
-];
+const SEVERITY_COLORS = { 'Critical': '#ef4444', 'High': '#f97316', 'Medium': '#3b82f6', 'Low': '#8b5cf6' };
+const PLATFORM_COLORS = { 'X (Twitter)': '#0ea5e9', 'Telegram': '#3b82f6', 'Dark Web': '#4f46e5', 'Forums': '#a855f7' };
 
-// Colors must match your theme
-const SEVERITY_COLORS = {
-  'Critical': '#ef4444', // red-500
-  'High': '#f97316',     // orange-500
-  'Medium': '#3b82f6',    // blue-500
-  'Low': '#8b5cf6',      // violet-500
-};
-
-const PLATFORM_COLORS = {
-  'X (Twitter)': '#0ea5e9', // sky-500
-  'Telegram': '#3b82f6',      // blue-500
-  'Dark Web': '#4f46e5',      // indigo-600
-  'Forums': '#a855f7',      // purple-500
-};
 
 // --- Main Component ---
 export default function Dashboard() {
+  const [alerts, setAlerts] = useState([]); // Start with an empty array
+  const [isLoading, setIsLoading] = useState(true);
+
+  // --- NEW: Live Data Fetching ---
+  useEffect(() => {
+    setIsLoading(true);
+    fetch('http://localhost:5001/api/alerts')
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json();
+      })
+      .then(data => {
+        // --- THIS IS THE FIX ---
+        // The new Node.js backend sends simple JSON, not BSON
+        const formattedData = data.map(alert => ({
+          ...alert,
+          // Convert the simple ISO string to a readable date
+          timestamp: new Date(alert.timestamp).toLocaleString(),
+          // Use 'New' as default if 'severity' isn't set
+          severity: alert.severity || 'New',
+          // The ID is now just _id, not _id.$oid
+          id: alert._id 
+        }));
+        // --- END OF FIX ---
+        
+        setAlerts(formattedData);
+        setIsLoading(false);
+      })
+      .catch(error => {
+        console.error("Error fetching alerts:", error);
+        toast.error("Failed to connect to backend. Is it running?");
+        setIsLoading(false);
+      });
+  }, []); 
+
   return (
     <div>
-      <h3 className="text-3xl font-medium text-primary">Dashboard</h3>
-      
-      {/* --- Charts Grid --- */}
+    
+    
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <ChartCard title="Alerts by Severity">
           <DonutChart data={alertSeverityData} colors={SEVERITY_COLORS} />
@@ -97,14 +75,15 @@ export default function Dashboard() {
 
       {/* --- Recent Alerts Table --- */}
       <div className="mt-8">
-        <AlertTable alerts={MOCK_ALERTS} />
+        {/* We pass the LIVE data and loading state to the AlertTable */}
+        <AlertTable alerts={alerts} isLoading={isLoading} />
       </div>
     </div>
   );
 }
 
-// --- Sub-Components ---
-
+// --- Sub-Components (ChartCard, DonutChart) ---
+// (These are unchanged)
 function ChartCard({ title, children }) {
   return (
     <div className="bg-subtle rounded-lg shadow-lg p-6 border border-primary">
@@ -117,7 +96,6 @@ function ChartCard({ title, children }) {
 }
 
 function DonutChart({ data, colors }) {
-  // Custom Tooltip to match theme
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
@@ -132,17 +110,7 @@ function DonutChart({ data, colors }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          cx="50%"
-          cy="50%"
-          innerRadius={60}
-          outerRadius={90}
-          fill="#8884d8"
-          paddingAngle={5}
-        >
+        <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={90} fill="#8884d8" paddingAngle={5}>
           {data.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={colors[entry.name]} />
           ))}

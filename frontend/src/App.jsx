@@ -14,6 +14,7 @@ import Login from './pages/auth/Login';
 import Signup from './pages/auth/Signup';
 import PageNotFound from './pages/PageNotFound';
 import Landing from './pages/Landing';
+import NewStrike from './pages/main/NewStrike';
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="search" element={<Search />} />
         <Route path="harvesters" element={<Harvesters />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="new-strike" element={<NewStrike />} />
       </Route>
 
   

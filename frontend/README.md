@@ -1,3 +1,29 @@
+<div className={`fixed inset-0 z-50 flex items-center justify-center backdrop-blur-lg ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/60'}`}>
+      <div className={`bg-primary rounded-lg shadow-2xl w-full max-w-lg border ${isDarkMode ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-gray-900 border-gray-300' }`}>
+        <div className="flex justify-between items-center p-6 border-b border-primary">
+          <h3 className={`text-xl font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>Create New Strike Project</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

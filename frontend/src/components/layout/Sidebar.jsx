@@ -2,11 +2,12 @@ import React from 'react';
 import { NavLink } from 'react-router-dom'; 
 import {
   LayoutDashboard,  Search, DatabaseZap, Users,
-  LogOut, Briefcase
+  LogOut, Briefcase, SearchCheck
 } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+  { name: 'New Strike', icon: SearchCheck, path: '/new-strike' },
   { name: 'Cases', icon: Briefcase, path: '/cases' },
   { name: 'Search', icon: Search, path: '/search' },
   { name: 'Harvesters', icon: DatabaseZap, path: '/harvesters' },

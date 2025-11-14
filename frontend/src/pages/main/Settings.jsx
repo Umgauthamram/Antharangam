@@ -10,7 +10,7 @@ const MOCK_USERS = [
   { id: 2, name: "Investigator B", role: "Investigator", email: "user@offence.click", lastLogin: "5m ago" },
   { id: 3, name: "Analyst C", role: "Analyst", email: "analyst@offence.click", lastLogin: "3h ago" },
 ];
-
+ 
 const MOCK_AUDIT_LOG = [
   { id: 1, user: "Investigator B", action: "Created Case: CASE-005", ip: "10.1.1.2", timestamp: "5m ago" },
   { id: 2, user: "Investigator A", action: "Logged In", ip: "192.168.1.1", timestamp: "1h ago" },

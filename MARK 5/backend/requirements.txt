@@ -1,0 +1,19 @@
+# Flask
+# flask-cors
+# pymongo
+# python-dotenv
+# snscrape
+
+# Flask
+# flask-cors
+# pymongo
+# python-dotenv
+# playwright
+# playwright-stealth
+
+Flask
+flask-cors
+pymongo
+python-dotenv
+twscrape
+nest_asyncio

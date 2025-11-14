@@ -28,7 +28,7 @@ export default function HarvesterCard({ icon: Icon = Database, name, description
 
   return (
     <div className="bg-subtle rounded-lg shadow-lg overflow-hidden flex flex-col justify-between border border-primary">
-      {/* Card Header */}
+    
       <div className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center">

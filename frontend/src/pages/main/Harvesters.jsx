@@ -8,7 +8,7 @@ import {
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
-import HarvesterCard from '/src/components/harvesters/HarvesterCard.jsx'; // Correct import path
+import HarvesterCard from '/src/components/harvesters/HarvesterCard.jsx'; 
 
 const MOCK_HARVESTER_STATE = [
   { 
