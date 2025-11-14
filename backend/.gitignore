@@ -42,13 +42,16 @@ coverage/
 *.tsbuildinfo
 
 venv/
-__pycache__/
-*.pyc
-
-uploads/
-cloudinary_temp/
 
 
-*.pid
-*.seed
-*.pid.lock
+Cache/
+**/Cache/
+*.sqlite
+*.db
+
+
+playwright/
+**/playwright/
+
+backend/chromium_user_data/
+chromium_user_data/
