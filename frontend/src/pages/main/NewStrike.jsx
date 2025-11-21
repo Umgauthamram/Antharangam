@@ -5,25 +5,19 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDarkMode } from '../../hooks/useDarkMode';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { exportSummaryToPDF, exportPostsToPDF, exportPostsToExcel } from '../../utils/exportUtils';
-
-
+import { exportSummaryToPDF,  exportPostsToExcel } from '../../utils/exportUtils';
 
 
 export default function StrikePage() {
   const [view, setView] = useState('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
   const [analysisResults, setAnalysisResults] = useState(null);
-
   const [currentQuery, setCurrentQuery] = useState('');
   const [projects, setProjects] = useState([]);
   const [isProjectsLoading, setIsProjectsLoading] = useState(true);
   const [isDarkMode] = useDarkMode();
   const [ranQuery, setRanQuery] = useState('');
-
-
 
 
   const fetchProjects = async () => {
@@ -67,18 +61,13 @@ export default function StrikePage() {
     setAnalysisResults(null);
     setRanQuery(keyword);
     setIsModalOpen(false);
-    toast('Running live fetching... This may take a moment.');
+    toast('Running live fetching This may take a moment.');
 
     try {
-      // const response = await fetch('http://localhost:5001/api/strike/twitter', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ projectName, description, keyword, startDate, endDate, limit: 50 }),
-      // });
-      const response = await fetch('http://localhost:5001/api/projects/strike/twitter', {
+        const response = await fetch('http://localhost:5001/api/projects/strike/twitter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, limit: 50 }),
+        body: JSON.stringify({ ...formData, limit: 100 }),
       });
 
       if (!response.ok) throw new Error('Backend server error');
@@ -115,11 +104,7 @@ export default function StrikePage() {
     toast('Fetching past analysis');
 
     try {
-      // const response = await fetch(`http://localhost:5001/api/projects/posts?keyword=${encodeURIComponent(queryKeyword)}`);
-      // if (!response.ok) throw new Error('Failed to fetch posts for this project');
-
-      // const results = await response.json();
-      const response = await fetch(`http://localhost:5001/api/projects/posts?keyword=${encodeURIComponent(queryKeyword)}`);
+      const response = await fetch(`http://localhost:5001/api/posts/by_keyword?keyword=${encodeURIComponent(queryKeyword)}`);
       if (!response.ok) throw new Error('Failed to fetch posts for this project');
 
       const results = await response.json();

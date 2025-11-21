@@ -7,11 +7,9 @@ import {
 
 const navItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { name: 'New Strike', icon: SearchCheck, path: '/new-strike' },
-  { name: 'Cases', icon: Briefcase, path: '/cases' },
-  { name: 'Search', icon: Search, path: '/search' },
-  { name: 'Harvesters', icon: DatabaseZap, path: '/harvesters' },
+  { name: 'Case', icon: Briefcase, path: '/Case' },
   { name: 'Settings', icon: Users, path: '/settings' },
+
 ];
 
 export default function Sidebar({ isOpen, setIsOpen, onLogout }) {

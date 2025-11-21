@@ -1,15 +1,18 @@
 import express from 'express';
-import { getProjects, createStrike, getPostsByKeyword} from '../controllers/strikeController.js';
+import { getProjects, createStrike,  createAutomatedProject, generateProjectSummary} from '../controllers/projectController.js';
 
 const router = express.Router();
 
-// GET /api/projects/
+
 router.get('/', getProjects);
 
-// POST /api/projects/strike/twitter
+// POST /api/projects/strike/twitter (Creates a Manual Strike)
 router.post('/strike/twitter', createStrike);
 
-// GET /api/projects/posts
-router.get('/posts', getPostsByKeyword);
+// POST /api/projects/automated (Creates an Automated Project)
+router.post('/automated', createAutomatedProject);
 
-export default router;
+// POST /api/projects/:id/summarize (Runs On-Demand AI)
+router.post('/:id/summarize', generateProjectSummary);
+
+export default router;  

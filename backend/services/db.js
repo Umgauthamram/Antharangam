@@ -10,9 +10,9 @@ let db;
 try {
   await client.connect();
   db = client.db(dbName);
-  console.log(`[Database] Successfully connected to MongoDB at ${uri}`);
+  console.log(` Successfully connected to MongoDB `);
 } catch (e) {
-  console.error("[Database] Could not connect to MongoDB", e);
+  console.error("Could not connect to MongoDB", e);
   process.exit(1);
 }
 

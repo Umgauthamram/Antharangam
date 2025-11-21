@@ -2,57 +2,131 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import 'dotenv/config';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-2.0-flash",
+  temperature: 0.3,
+  systemInstruction: `You are a professional OSINT analyst.
+Analyze social media posts and generate a formal Threat Intelligence Summary.
+Structure:
+# Title
+## Executive Summary
+## Key Findings (bullet points)
+Highlight entities with **bold** (e.g., **@username**, **Delhi**, **#Protest**).
+Be concise, factual, and direct. Never output JSON.`
+});
 
-export async function generateAnalysis(query, posts) {
-  if (!posts || posts.length === 0) {
-    return "No posts were found for this query, so no analysis could be generated.";
+const MAX_POSTS_PER_CHUNK = 20; 
+const MAX_DIRECT_POSTS = 25;    
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
   }
+  return chunks;
+}
 
-  const systemPrompt = `You are a professional OSINT (Open-Source Intelligence) analyst. Your task is to analyze a raw list of social media posts (from X/Twitter,Facebook, Instagram, Reddit, Linkedin) related to a specific keyword and generate a formal intelligence summary.
+async function summarizeChunk(posts, query) {
+  const postTexts = posts
+    .map(p => `• @${p.username}: "${p.content.substring(0, 300)}${p.content.length > 300 ? '...' : ''}"`)
+    .join("\n");
 
-Respond in the style of a "general article" (as requested), structured with a title, an executive summary, and key findings.
+  const prompt = `
+Analyze these ${posts.length} posts about: "${query}"
 
-**Crucially: Highlight all important entities (usernames, locations, keywords, threats) by wrapping them in double asterisks (e.g., **@username** or **Red Fort**).**
+Extract:
+- Threats or violence
+- Locations, people, organizations
+- Coordinated activity or calls to action
+- Sentiment (anger, planning, fear)
 
-The output must be a single block of text, using Markdown for formatting. Do not output JSON.
-`;
+Posts:
+${postTexts}
 
-  let postData = "--- START OF RAW POST DATA ---\n";
-  for (const post of posts) {
-    postData += `Username: @${post.username}\nPost: ${post.content}\n\n`;
-  }
-  postData += "--- END OF RAW POST DATA ---";
-
-  const userPrompt = `
-Here is the data for my analysis.
-
-**Original Query:** "${query}"
-**Total Posts Found:** ${posts.length}
-
-${postData}
-
-Please generate the "Threat Intelligence Summary" based on this data, following all instructions in the system prompt.
+Return 4–6 bullet points. Use **bold** for critical entities.
 `;
 
   try {
-    console.log("[aiService] Sending request to Gemini API...");
-    
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      systemInstruction: {
-        role: "system",
-        parts: [{ text: systemPrompt }]
-      },
-    });
-
-    const summary = result.response.text();
-    console.log("[aiService] Successfully received summary from Gemini.");
-    return summary;
-
-  } catch (error) {
-    console.error("[aiService] Error calling Gemini API:", error);
-    return "Error: The AI analysis failed to run. The backend may be missing its API key or has a connection issue.";
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (err) {
+    return `[Error analyzing this batch]`;
   }
+}
+
+async function generateFinalReport(chunkSummaries, query, totalPosts) {
+  const combined = chunkSummaries
+    .map((s, i) => `Batch ${i + 1}:\n${s}`)
+    .join("\n\n");
+
+  const finalPrompt = `
+# Threat Intelligence Summary: "${query}"
+
+Total Posts Analyzed: ${totalPosts}
+Platform: X (Twitter)
+
+${combined}
+
+Generate a final professional report with:
+- Executive Summary (2–3 sentences)
+- Key Findings (bullet points)
+- Entities of Interest
+- Risk Level: Low / Moderate / High / Critical
+
+Use **bold** for all names, locations, hashtags, threats.
+`;
+
+  try {
+    const result = await model.generateContent(finalPrompt);
+    return result.response.text();
+  } catch (err) {
+    return `# Threat Intelligence Summary: "${query}"\n\nAnalysis partially failed. ${totalPosts} posts collected. Raw data available.`;
+  }
+}
+
+export async function generateAnalysis(query, posts) {
+  if (!posts || posts.length === 0) {
+    return `# No Results Found\n\nNo posts matched: "${query}"\n\nPossible reasons: topic not trending, heavy moderation, or safe environment.`;
+  }
+
+  const total = posts.length;
+  console.log(`[AI] Analyzing ${total} posts for "${query}"`);
+
+  // Case 1: Small number of posts = send directly 
+  if (total <= MAX_DIRECT_POSTS) {
+    const prompt = `
+Analyze these ${total} posts about: "${query}"
+
+Posts:
+${posts.map(p => `• @${p.username}: "${p.content}"`).join("\n")}
+
+Generate a Threat Intelligence Summary with:
+# Title
+## Executive Summary
+## Key Findings
+Use **bold** for entities.
+`;
+
+    try {
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err) {
+      return `AI analysis failed for ${total} posts.`;
+    }
+  }
+
+  // Case 2: Large number = chunk + summarize + merge 
+  const chunks = chunkArray(posts, MAX_POSTS_PER_CHUNK);
+  console.log(`[AI] Split into ${chunks.length} chunks`);
+
+  const summaries = [];
+  for (let i = 0; i < chunks.length; i++) {
+    console.log(`[AI] Processing chunk ${i + 1}/${chunks.length}...`);
+    const summary = await summarizeChunk(chunks[i], query);
+    summaries.push(summary);
+    await new Promise(r => setTimeout(r, 600)); 
+  }
+
+  return await generateFinalReport(summaries, query, total);
 }
