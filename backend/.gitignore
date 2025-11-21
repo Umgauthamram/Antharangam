@@ -1,57 +1,70 @@
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-package-lock.json
-yarn.lock
-
-.env
-.env.local
-.env.development
-.env.production
-.env.test
-
 dist/
 build/
-.out/
-.next/
-.vercel/
+.env
+.env.local
+.env.*.local
 
-logs/
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
 *.log
-log.txt
+logs/
+debug.log
 
-.cache/
-.tmp/
-temp/
-tmp/
-*.tmp
-
-
+# OS
 .DS_Store
-
 Thumbs.db
 
-.vscode/
-.history/
+# Playwright
+playwright/.cache/
+**/playwright/.cache/
+**/playwright/driver/
+**/playwright/driver/*
+**/playwright/*/driver/*
 
-.nyc_output/
-coverage/
-
-*.tsbuildinfo
-
-venv/
-
-
-Cache/
+# Browser User Data (VERY LARGE)
+backend/chromium_user_data/
+**/chromium_user_data/
+**/chrome-cache/
 **/Cache/
-*.sqlite
-*.db
+**/Default/Cache/
 
+# Cache DB
+**/Cache_Data/
+**/Cache_Data/*
+**/Cache_Data/*.db
+**/Cache_Data/sqldb
 
-playwright/
-**/playwright/
+# Git LFS pointers
+*.bin
+*.exe
+*.zip
+*.tar
+*.gz
+*.7z
+*.mp4
+*.mov
+
+# Others
+tmp/
+temp/
+uploads/
+
 
 backend/chromium_user_data/
 chromium_user_data/
