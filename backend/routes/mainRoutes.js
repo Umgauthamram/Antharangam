@@ -3,6 +3,7 @@ import projectRoutes from './projectRoutes.js';
 import harvesterRoutes from './harvesterRoutes.js';
 import alertRoutes from './alertRoutes.js';
 import { getPostsBySource } from '../controllers/projectController.js';
+import injestRoutes from './ingestionRoutes.js';
 
 const router = express.Router();
 
@@ -16,4 +17,7 @@ router.use('/alerts', alertRoutes);            // GET /api/alerts
 
 router.get('/posts/by_source', getPostsBySource);
 
+router.get('/ingest', injestRoutes);
+
 export default router;
+

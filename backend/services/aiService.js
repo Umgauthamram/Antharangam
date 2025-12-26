@@ -1,132 +1,271 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import 'dotenv/config';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-const model = genAI.getGenerativeModel({ 
-  model: "gemini-2.0-flash",
-  temperature: 0.3,
-  systemInstruction: `You are a professional OSINT analyst.
-Analyze social media posts and generate a formal Threat Intelligence Summary.
-Structure:
-# Title
-## Executive Summary
-## Key Findings (bullet points)
-Highlight entities with **bold** (e.g., **@username**, **Delhi**, **#Protest**).
-Be concise, factual, and direct. Never output JSON.`
-});
+// import { GoogleGenerativeAI } from "@google/generative-ai";
+// import 'dotenv/config';
 
-const MAX_POSTS_PER_CHUNK = 20; 
-const MAX_DIRECT_POSTS = 25;    
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function chunkArray(arr, size) {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
+// const summaryModel = genAI.getGenerativeModel({
+//   model: "gemini-2.0-flash",
+//   temperature: 0.3
+// });
 
-async function summarizeChunk(posts, query) {
-  const postTexts = posts
-    .map(p => `• @${p.username}: "${p.content.substring(0, 300)}${p.content.length > 300 ? '...' : ''}"`)
-    .join("\n");
 
-  const prompt = `
-Analyze these ${posts.length} posts about: "${query}"
+// const structuredModel = genAI.getGenerativeModel({
+//   model: "gemini-2.0-flash"
+// });
 
-Extract:
-- Threats or violence
-- Locations, people, organizations
-- Coordinated activity or calls to action
-- Sentiment (anger, planning, fear)
 
-Posts:
-${postTexts}
 
-Return 4–6 bullet points. Use **bold** for critical entities.
-`;
+// export async function runFullProjectAnalysis(query, postsToAnalyze, totalPostsFound) {
 
-  try {
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  } catch (err) {
-    return `[Error analyzing this batch]`;
-  }
-}
+//   const MAX_POSTS_PER_ANALYSIS = 35;
 
-async function generateFinalReport(chunkSummaries, query, totalPosts) {
-  const combined = chunkSummaries
-    .map((s, i) => `Batch ${i + 1}:\n${s}`)
-    .join("\n\n");
+//   if (!postsToAnalyze || postsToAnalyze.length === 0) {
+//     return { summary: "No posts were found for this query.", riskResults: [] };
+//   }
 
-  const finalPrompt = `
-# Threat Intelligence Summary: "${query}"
+//   if (postsToAnalyze.length > MAX_POSTS_PER_ANALYSIS) {
+//     console.warn(`[AI Service] Truncating analysis sample from ${postsToAnalyze.length} to ${MAX_POSTS_PER_ANALYSIS}.`);
 
-Total Posts Analyzed: ${totalPosts}
-Platform: X (Twitter)
+//     postsToAnalyze = postsToAnalyze.slice(0, MAX_POSTS_PER_ANALYSIS);
+//   }
 
-${combined}
+//   const postsData = postsToAnalyze.map(p => `ID: ${p._id}\nContent: ${p.content}`).join('\n---\n');
 
-Generate a final professional report with:
-- Executive Summary (2–3 sentences)
-- Key Findings (bullet points)
-- Entities of Interest
-- Risk Level: Low / Moderate / High / Critical
+//   const systemPrompt = `
+// You are a professional OSINT (Open-Source Intelligence) analyst.
+// Your task is to analyze the provided sample of social media posts and perform two actions:
 
-Use **bold** for all names, locations, hashtags, threats.
-`;
+// 1. **Generate a formal intelligence summary:** This summary must cover key findings based on the sample, following a structure with a Title, Executive Summary, and Key Findings. Highlight all important entities (usernames, locations, threats) by wrapping them in double asterisks (e.g., **@username**). Include Risk Level: Low / Moderate / High / Critical.
 
-  try {
-    const result = await model.generateContent(finalPrompt);
-    return result.response.text();
-  } catch (err) {
-    return `# Threat Intelligence Summary: "${query}"\n\nAnalysis partially failed. ${totalPosts} posts collected. Raw data available.`;
-  }
-}
+// 2. **Analyze each post in the sample for risk and sentiment.**
 
-export async function generateAnalysis(query, posts) {
-  if (!posts || posts.length === 0) {
-    return `# No Results Found\n\nNo posts matched: "${query}"\n\nPossible reasons: topic not trending, heavy moderation, or safe environment.`;
-  }
+// **CRUCIAL INSTRUCTION:** Output ONLY a valid JSON object.
+// `;
 
-  const total = posts.length;
-  console.log(`[AI] Analyzing ${total} posts for "${query}"`);
+//   const userPrompt = `
+// **Original Query:** "${query}"
+// **Total Posts Found in Scrape:** ${totalPostsFound}
+// **Posts Sampled for Detailed Analysis:** ${postsToAnalyze.length}
 
-  // Case 1: Small number of posts = send directly 
-  if (total <= MAX_DIRECT_POSTS) {
-    const prompt = `
-Analyze these ${total} posts about: "${query}"
+// ${postsData}
+// ---
 
-Posts:
-${posts.map(p => `• @${p.username}: "${p.content}"`).join("\n")}
+// Please generate the full Threat Intelligence Summary (Markdown) and the post-by-post risk analysis (JSON array) based on this sample.
+// `;
 
-Generate a Threat Intelligence Summary with:
-# Title
-## Executive Summary
-## Key Findings
-Use **bold** for entities.
-`;
+
+//   try {
+//     const result = await structuredModel.generateContent({
+//       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+//       systemInstruction: systemPrompt,
+//       generationConfig: {
+//         responseMimeType: "application/json",
+//         responseSchema: {
+//           type: "OBJECT",
+//           properties: {
+//             summary: { type: "STRING" },
+//             post_analysis: {
+//               type: "ARRAY",
+//               items: {
+//                 type: "OBJECT",
+//                 properties: {
+//                   id: { type: "STRING" },
+//                   risk: { type: "STRING", enum: ["High", "Medium", "Low"] },
+//                   sentiment: { type: "STRING", enum: ["Negative", "Neutral", "Positive"] }
+//                 },
+//                 required: ["id", "risk", "sentiment"]
+//               }
+//             }
+//           },
+//           required: ["summary", "post_analysis"]
+//         }
+//       }
+//     });
+
+
+//     let jsonText = result.text; 
+//         if (!jsonText) {
+//             jsonText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+            
+//             if (!jsonText) {
+//                 console.error("[AI Service] Empty text detected. Full API result:", JSON.stringify(result, null, 2));
+//                 throw new Error("AI returned an empty or invalid response structure.");
+//             }
+//         }
+//     const cleanJsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+//         const parsed = JSON.parse(cleanJsonText);
+
+//         return {
+//             summary: parsed.summary,
+//             riskResults: parsed.post_analysis
+//         };
+
+//     } catch (error) {
+//         console.error("[AI Service] Error calling Gemini API:", error);
+//         return { summary: "Error: AI analysis failed or returned invalid data.", riskResults: [] };
+//     }
+// }
+
+
+// export async function analyzeRiskBatch(posts) {
+//   if (!posts || posts.length === 0) return [];
+
+//   const postsData = posts.map(p => `ID: ${p._id}\nContent: ${p.content}`).join('\n---\n');
+
+//   const systemPrompt = `
+// You are an expert content moderator and threat analyst.
+//  Analyze the following social media posts.
+// For EACH post, determine:
+// 1. Risk Level: "High", "Medium", or "Low" (Based on violence, illegal acts, threats).
+// 2. Sentiment: "Negative", "Neutral", or "Positive".
+
+// Output ONLY a valid JSON array. Format:
+// [{"id": "post_id", "risk": "High", "sentiment": "Negative"}, ...]
+//  `;
+
+//   try {
+//     const result = await summaryModel.generateContent({
+//       contents: [{ role: "user", parts: [{ text: postsData }] }],
+//       systemInstruction: systemPrompt,
+//       generationConfig: {
+//         responseMimeType: "application/json",
+//         responseSchema: {
+//           type: "ARRAY",
+//           items: {
+//             type: "OBJECT",
+//             properties: {
+//               id: { type: "STRING" },
+//               risk: { type: "STRING", enum: ["High", "Medium", "Low"] },
+//               sentiment: { type: "STRING", enum: ["Negative", "Neutral", "Positive"] }
+//             },
+//             required: ["id", "risk", "sentiment"]
+//           }
+//         }
+//       }
+//     });
+
+//    let text = result.text; 
+//         if (!text) {
+//             text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+//         }
+
+//         if (!text) {
+//             console.error("[AI] Risk analysis failed: Received empty response text. Full API result:", JSON.stringify(result, null, 2));
+//             return [];
+//         }
+
+//         const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
+//         return JSON.parse(jsonString);
+
+//     } catch (error) {
+//         console.error("[AI] Risk analysis failed:", error);
+//         return [];
+//     }
+// }
+
+
+
+
+
+// above is for google gemini ai service
+
+export const analyzeRiskBatch = async (posts) => {
+    return posts.map(post => ({
+        ...post,
+        risk: post.risk || 'Low',
+        sentiment: post.sentiment || 'Neutral'
+    }));
+};
+
+export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
+    console.log(`[LocalAI] Generating statistical summary for ${posts.length} posts...`);
 
     try {
-      const result = await model.generateContent(prompt);
-      return result.response.text();
-    } catch (err) {
-      return `AI analysis failed for ${total} posts.`;
+        let highRiskCount = 0;
+        let mediumRiskCount = 0;
+        let lowRiskCount = 0;
+        
+        const allKeywords = {};
+        const allEntities = {};
+        const allPhones = new Set();
+        const allUPIs = new Set();
+
+        posts.forEach(post => {
+            if (post.risk === 'High') highRiskCount++;
+            else if (post.risk === 'Medium') mediumRiskCount++;
+            else lowRiskCount++;
+
+            const intel = post.enrichmentData || {};
+            
+            (intel.risk_flags || []).forEach(flag => {
+                const cleanFlag = flag.replace('Keyword: ', '').replace('Phone Detected', '').replace('UPI Detected', '').trim();
+                if (cleanFlag && !cleanFlag.startsWith('Source:')) {
+                    allKeywords[cleanFlag] = (allKeywords[cleanFlag] || 0) + 1;
+                }
+            });
+
+            (intel.ner_entities || []).forEach(entity => {
+                allEntities[entity] = (allEntities[entity] || 0) + 1;
+            });
+
+            (intel.extracted_phones || []).forEach(p => allPhones.add(p));
+            (intel.extracted_upis || []).forEach(u => allUPIs.add(u));
+        });
+
+        const topKeywords = Object.entries(allKeywords)
+            .sort((a, b) => b[1] - a[1]) 
+            .slice(0, 5)
+            .map(k => `<b>${k[0]}</b> (${k[1]})`)
+            .join(', ');
+
+        const topEntities = Object.entries(allEntities)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(e => e[0])
+            .join(', ');
+
+        const highRiskPercent = totalCount > 0 ? (highRiskCount / totalCount) * 100 : 0;
+        let threatLevel = "LOW";
+        let threatColor = "green";
+        
+        if (highRiskPercent > 10) { threatLevel = "MEDIUM"; threatColor = "#d97706"; } 
+        if (highRiskPercent > 30) { threatLevel = "CRITICAL"; threatColor = "#dc2626"; } 
+        const summaryHTML = `
+            <div style="font-family: sans-serif; font-size: 14px;">
+                <p style="margin-bottom: 8px;"><strong> Threat Level: <span style="color:${threatColor}">${threatLevel}</span></strong></p>
+                <p style="margin-bottom: 12px;">
+                    Scan completed on <strong>${totalCount} posts</strong> relating to "<em>${keyword}</em>".
+                    System identified <strong>${highRiskCount} High Risk</strong> items requiring immediate attention.
+                </p>
+                
+                <p style="margin-bottom: 4px;"><strong> Key Patterns Detected:</strong></p>
+                <ul style="margin-top: 0;">
+                    <li><strong>Common Themes:</strong> ${topKeywords || "None detected"}</li>
+                    <li><strong>Key Entities Mentioned:</strong> ${topEntities || "None detected"}</li>
+                    <li><strong>Suspect Contacts:</strong> Found ${allPhones.size} unique phone numbers and ${allUPIs.size} UPI IDs.</li>
+                </ul>
+
+                <p style="margin-top: 12px;"><strong> Recommendation:</strong>
+                ${threatLevel === "CRITICAL" 
+                    ? "Significant scam activity detected. Generate Forensic Report immediately for law enforcement action." 
+                    : "Monitor specific high-risk users. Review extracted evidence in the log below."}
+                </p>
+            </div>
+        `;
+
+        return {
+            summary: summaryHTML,
+            riskResults: posts 
+        };
+
+    } catch (error) {
+        console.error("Local Analysis Error:", error);
+        return {
+            summary: "Error generating statistical summary.",
+            riskResults: []
+        };
     }
-  }
-
-  // Case 2: Large number = chunk + summarize + merge 
-  const chunks = chunkArray(posts, MAX_POSTS_PER_CHUNK);
-  console.log(`[AI] Split into ${chunks.length} chunks`);
-
-  const summaries = [];
-  for (let i = 0; i < chunks.length; i++) {
-    console.log(`[AI] Processing chunk ${i + 1}/${chunks.length}...`);
-    const summary = await summarizeChunk(chunks[i], query);
-    summaries.push(summary);
-    await new Promise(r => setTimeout(r, 600)); 
-  }
-
-  return await generateFinalReport(summaries, query, total);
-}
+};

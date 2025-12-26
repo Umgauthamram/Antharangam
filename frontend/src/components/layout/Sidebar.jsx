@@ -27,7 +27,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLogout }) {
        
         {isOpen && (
           <span className="ml-2 text-2xl font-bold text-primary">
-            Antharangam
+            Antharangam <span className='text-xs text-white bg-gray-500 rounded-xl font-semibold p-1'>BETA</span>
           </span>
         )}
       </div>

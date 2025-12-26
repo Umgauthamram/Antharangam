@@ -1,32 +1,41 @@
 import { startHarvester, stopHarvester } from '../services/harvesterManager.js';
 import { projects as projectsCollection } from '../services/db.js';
 
-
-
-//POST- /api/harvester/stop
+// POST /api/harvesters/stop
 export const stopHarvesterJob = async (req, res) => {
   const { id } = req.body;
-  console.log(`API Received POST- /api/harvester/stop for ID: ${id}`);
+  console.log(`[API] Received POST /api/harvesters/stop for ID: ${id}`);
 
   if (!id) {
     return res.status(400).json({ error: "id is required." });
   }
 
   try {
-    await stopHarvester(id); 
-    
+    await stopHarvester(id);
+
+    // UPDATE DB TO "Stopped"
+    const result = await projectsCollection.updateOne(
+      { projectId: id },
+      { $set: { status: "Stopped", endDate: new Date() } }
+    );
+
+    if (result.matchedCount === 0) {
+      console.warn(`[Harvester] No project found with projectId: ${id}`);
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    console.log(`[Harvester] Successfully stopped project ${id} and updated DB`);
     res.status(200).json({ message: `Harvester '${id}' stopped successfully.` });
   } catch (e) {
-    console.error(e);
+    console.error("[Harvester] Stop failed:", e);
     res.status(500).json({ error: "Failed to stop harvester." });
   }
 };
 
-//GET - /api/harvesters/status
+// GET /api/harvesters/status
 export const getHarvestersStatus = async (req, res) => {
   console.log("[API] Received GET /api/harvesters/status");
   try {
-    // Find all projects which are Automated
     const harvesters = await projectsCollection.find({ type: "Automated" }).toArray();
     
     res.json(harvesters);
@@ -36,22 +45,27 @@ export const getHarvestersStatus = async (req, res) => {
   }
 };
 
-//POST - /api/harvester/start
+// POST /api/harvesters/start
 export const startHarvesterJob = async (req, res) => {
   const { id, name, keywords } = req.body;
-  console.log(`API Received POST- /api/harvester/start for ID: ${id}`);
+  console.log(`[API] Received POST /api/harvesters/start for ID: ${id}`);
 
   if (!id || !name || !keywords || keywords.length === 0) {
     return res.status(400).json({ error: "id, name, and a keywords array are required." });
   }
 
   try {
-    startHarvester(id, name, keywords);
-    
+    await startHarvester(id, name, keywords);
+
+    // UPDATE DB TO "Running"
+    await projectsCollection.updateOne(
+      { projectId: id },
+      { $set: { status: "Running" } }
+    );
+
     res.status(200).json({ message: `Harvester '${id}' started successfully.` });
   } catch (e) {
-    console.error(e);
+    console.error("[Harvester] Start failed:", e);
     res.status(500).json({ error: "Failed to start harvester." });
   }
 };
-

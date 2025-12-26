@@ -2,31 +2,162 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
     Search, Loader2, FileText, Bot, AlertTriangle, Plus, X, ArrowLeft, Download, FileSpreadsheet,
-    Calendar, Zap, Settings, Inbox, Wind, Send, Facebook, Instagram
+    Calendar, Zap, Settings, Inbox, Wind, Send, Facebook, Instagram, ShieldAlert, Power
 } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDarkMode } from '../../hooks/useDarkMode';
 import DatePicker from 'react-datepicker';
-import "react-datepicker/dist/react-datepicker.css";
-import { exportSummaryToPDF, exportPostsToExcel } from '../../utils/exportUtils';
+import "../../components/ui/datepicker.css";
+import { useLocation } from 'react-router-dom';
+import { generateCaseReport } from '../../utils/reportGenerator';
+
+
+const ALL_POSSIBLE_SOURCES = [
+    { id: 'x', name: 'X (Twitter)', icon: X, enabled: true },
+    { id: 'telegram', name: 'Telegram', icon: Send, enabled: false },
+    { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: false },
+    { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: false },
+];
+
+function OCRViewer({ text }) {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+        <div className="mt-2 w-full max-w-[200px]">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className={`flex items-center justify-between w-full px-3 py-2 text-xs font-semibold rounded border transition-all duration-200 
+                    ${isOpen
+                        ? 'bg-gray-100 text-gray-700 border-gray-300'
+                        : 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 hover:scale-105'
+                    }`}
+            >
+                <div className="flex items-center">
+                    <span className="mr-2">OCR Text</span>
+                </div>
+
+                {isOpen ? (
+                    <X className="w-3 h-3 text-gray-500" />
+                ) : (
+                    <span className="text-[10px] uppercase tracking-wider font-bold">View</span>
+                )}
+            </button>
+            {isOpen && (
+                <div className="mt-1 p-2 bg-white rounded text-[10px] text-gray-600 border border-gray-200 font-mono break-all max-h-32 overflow-y-auto shadow-inner animate-in fade-in slide-in-from-top-1 duration-200">
+                    {text}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function getSourceIcon(sourceId) {
+    const source = ALL_POSSIBLE_SOURCES.find(s => s.id === sourceId);
+    return source ? source.icon : FileText;
+}
 
 function TabButton({ title, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-6 py-3 text-sm font-medium transition-colors ${
-        active
-          ? 'border-b-4 rounded border-peacock-500 text-peacock-500'
-          : 'text-secondary hover:text-primary'
-      }`}
-    >
-      {title}
-    </button>
-  );
+    return (
+        <button
+            onClick={onClick}
+            className={`px-6 py-3 text-sm font-medium transition-colors ${active
+                ? 'border-b-4 rounded border-peacock-500 text-peacock-500'
+                : 'text-secondary hover:text-primary'
+                }`}
+        >
+            {title}
+        </button>
+    );
+}
+
+function SourceControlModal({ project, onClose, onUpdate }) {
+    const projectSourcesData = ALL_POSSIBLE_SOURCES.map(staticSource => {
+        const projectSource = (project.sources || []).find(ps => ps.id === staticSource.id);
+        return {
+            ...staticSource,
+            status: projectSource ? projectSource.status : 'Stopped',
+            isProjectSource: projectSource ? true : false
+        };
+    }).filter(s => s.isProjectSource);
+
+    const initialStatusMap = new Map(
+        projectSourcesData.map(s => [s.id, s.status])
+    );
+
+    const [sourceStatus, setSourceStatus] = useState(initialStatusMap);
+
+    const toggleSource = (sourceId) => {
+        setSourceStatus(prevStatus => {
+            const current = prevStatus.get(sourceId);
+            const newStatus = current === 'Active' ? 'Stopped' : 'Active';
+            const newMap = new Map(prevStatus);
+            newMap.set(sourceId, newStatus);
+            return newMap;
+        });
+    };
+
+    const handleSave = async () => {
+        const updatedSources = projectSourcesData.map(s => ({
+            id: s.id,
+            name: s.name,
+            status: sourceStatus.get(s.id) || 'Stopped'
+        }));
+
+        try {
+            const response = await fetch(`http://localhost:5001/api/projects/${project._id}/sources`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sources: updatedSources })
+            });
+
+            if (!response.ok) throw new Error("Failed to update sources");
+
+            toast.success("Sources updated & synced!");
+            onUpdate(updatedSources);
+            onClose();
+        } catch (error) {
+            console.error("Source update failed:", error);
+            toast.error("Update failed. Check connection.");
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-subtle rounded-lg shadow-2xl w-full max-w-md border border-primary mx-4 p-6">
+                <h3 className="text-xl font-semibold text-primary mb-4">Manage Sources: {project.name}</h3>
+                <div className="space-y-3 mb-6">
+                    {projectSourcesData.map(source => {
+                        const status = sourceStatus.get(source.id);
+                        const Icon = getSourceIcon(source.id);
+
+                        return (
+                            <div key={source.id} className="flex items-center justify-between p-3 border rounded-lg bg-primary">
+                                <div className="flex items-center">
+                                    <Icon className="w-5 h-5 mr-2 text-peacock-500" />
+                                    <span className="font-medium">{source.name}</span>
+                                </div>
+                                <button
+                                    onClick={() => toggleSource(source.id)}
+                                    className={`px-3 py-1 rounded text-sm font-medium flex items-center ${status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                        }`}
+                                >
+                                    <Power className="w-4 h-4 mr-1" />
+                                    {status === 'Active' ? 'Running' : 'Stopped'}
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="flex justify-end gap-3">
+                    <button onClick={onClose} className="px-4 py-2 text-secondary hover:text-primary rounded">Cancel</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-peacock-600 text-white rounded hover:bg-peacock-500">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export default function Workbench() {
-    const [view, setView] = useState('list'); 
+    const [view, setView] = useState('list');
     const [activeTab, setActiveTab] = useState('manual');
     const [isStrikeModalOpen, setIsStrikeModalOpen] = useState(false);
     const [isHarvesterModalOpen, setIsHarvesterModalOpen] = useState(false);
@@ -35,6 +166,8 @@ export default function Workbench() {
     const [projects, setProjects] = useState([]);
     const [isProjectsLoading, setIsProjectsLoading] = useState(true);
     const [isDarkMode] = useDarkMode();
+
+    const location = useLocation();
 
     const fetchProjects = async () => {
         setIsProjectsLoading(true);
@@ -53,7 +186,17 @@ export default function Workbench() {
 
     useEffect(() => {
         fetchProjects();
-    }, []);
+
+        if (location.state) {
+            const { view, currentProject, analysisData } = location.state;
+
+            if (view === 'analysis' && currentProject && analysisData) {
+                setCurrentProject(currentProject);
+                setAnalysisResults(analysisData);
+                setView('analysis');
+            }
+        }
+    }, [location.state]);
 
     const handleRunStrike = async (formData) => {
         const { projectName, description, keyword, startDate, endDate } = formData;
@@ -104,6 +247,43 @@ export default function Workbench() {
         }
     };
 
+    // Add these inside Workbench component
+    const handleStartHarvester = async (projectId, name, keywords) => {
+        try {
+            const res = await fetch('http://localhost:5001/api/harvesters/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: projectId, name, keywords: keywords.split(' OR ') })
+            });
+            if (res.ok) {
+                toast.success('Harvester started');
+                fetchProjects(); // ← REFRESH LIST
+            } else {
+                toast.error('Failed to start');
+            }
+        } catch (err) {
+            toast.error('Network error');
+        }
+    };
+
+    const handleStopHarvester = async (projectId) => {
+        try {
+            const res = await fetch('http://localhost:5001/api/harvesters/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: projectId })
+            });
+            if (res.ok) {
+                toast.success('Harvester stopped');
+                fetchProjects();
+            } else {
+                toast.error('Failed to stop');
+            }
+        } catch (err) {
+            toast.error('Network error');
+        }
+    };
+
     const handleViewAnalysis = async (project) => {
         setCurrentProject(project);
         setView('loading');
@@ -136,9 +316,9 @@ export default function Workbench() {
         fetchProjects();
         setView('list');
     };
-    
+
     const selectTab = (tab) => {
-        setView('list'); 
+        setView('list');
         setActiveTab(tab);
     }
 
@@ -148,7 +328,7 @@ export default function Workbench() {
                 return (
                     <div className="text-center p-12 bg-subtle rounded-lg">
                         <Loader2 className="w-12 h-12 text-peacock-500 animate-spin inline-block" />
-                        <p className="text-lg text-secondary mt-4">Loading Data...</p>
+                        <p className="text-lg text-secondary mt-4">Loading Data</p>
                     </div>
                 );
             case 'analysis':
@@ -157,11 +337,12 @@ export default function Workbench() {
                         project={currentProject}
                         initialData={analysisResults}
                         onBack={handleBackToList}
+                        onRefreshData={() => handleViewAnalysis(currentProject)}
                     />
                 );
             case 'list':
             default:
-              
+
                 const projectsToShow = projects.filter(p =>
                     (activeTab === 'manual' && p.type === 'Manual') ||
                     (activeTab === 'automated' && p.type === 'Automated')
@@ -178,75 +359,34 @@ export default function Workbench() {
         }
     };
 
+
     return (
         <div className="space-y-6">
-            {isStrikeModalOpen && (
-                <NewStrikeModal
-                    onClose={() => setIsStrikeModalOpen(false)}
-                    onScrape={handleRunStrike}
-                    isDarkMode={isDarkMode}
-                />
-            )}
-            {isHarvesterModalOpen && (
-                <NewHarvesterModal
-                    onClose={() => setIsHarvesterModalOpen(false)}
-                    onCreate={handleRunHarvester}
-                    isDarkMode={isDarkMode}
-                />
-            )}
-           {view === 'list' && (
+            {isStrikeModalOpen && (<NewStrikeModal onClose={() => setIsStrikeModalOpen(false)} onScrape={handleRunStrike} isDarkMode={isDarkMode} />)}
+            {isHarvesterModalOpen && (<NewHarvesterModal onClose={() => setIsHarvesterModalOpen(false)} onCreate={handleRunHarvester} isDarkMode={isDarkMode} />)}
+
+            {view === 'list' && (
                 <>
                     <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-3xl font-bold mb-1 text-primary">Case Details</h1>
-                           
-                        </div>
+                        <div><h1 className="text-3xl font-bold mb-1 text-primary">Case Details</h1></div>
                         <div className="flex gap-4">
-                            {activeTab === 'manual' && (
-                                <button
-                                    onClick={() => setIsStrikeModalOpen(true)}
-                                    className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none"
-                                >
-                                   
-                                    New Manual Search
-                                </button>
-                            )}
-                            {activeTab === 'automated' && (
-                                <button
-                                    onClick={() => setIsHarvesterModalOpen(true)}
-                                    className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none"
-                                >
-                                    New Automated Project
-                                </button>
-                            )}
+                            {activeTab === 'manual' && (<button onClick={() => setIsStrikeModalOpen(true)} className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none">New Manual Search</button>)}
+                            {activeTab === 'automated' && (<button onClick={() => setIsHarvesterModalOpen(true)} className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none">New Automated Project</button>)}
                         </div>
                     </div>
-
                     <div className="flex border-primary">
-                        <TabButton
-                            title="Manual Search"
-                            active={activeTab === 'manual'}
-                            onClick={() => selectTab('manual')}
-                        />
-                        <TabButton
-                            title="Automated Projects"
-                            active={activeTab === 'automated'}
-                            onClick={() => selectTab('automated')}
-                        />
+                        <TabButton title="Manual Search" active={activeTab === 'manual'} onClick={() => selectTab('manual')} />
+                        <TabButton title="Automated Projects" active={activeTab === 'automated'} onClick={() => selectTab('automated')} />
                     </div>
-
-                    <div className="mt-8">
-                        {renderContent()}
-                    </div>
+                    <div className="mt-8">{renderContent()}</div>
                 </>
             )}
-
-            {(view === 'analysis' || view === 'loading') && (
-                renderContent()
-            )}
+            {(view === 'analysis' || view === 'loading') && renderContent()}
         </div>
     );
 }
+
+
 
 function NewStrikeModal({ onClose, onScrape, isDarkMode }) {
     const [projectName, setProjectName] = useState('');
@@ -255,45 +395,129 @@ function NewStrikeModal({ onClose, onScrape, isDarkMode }) {
     const [startDate, setStartDate] = useState(new Date());
     const [endDate, setEndDate] = useState(new Date());
 
-    const handleSubmit = (e) => { e.preventDefault(); onScrape({ projectName, description, keyword, startDate, endDate });};
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onScrape({ projectName, description, keyword, startDate, endDate });
+    };
+
+    const bgModal = isDarkMode ? 'bg-black' : 'bg-white';
+
+    const textPrimary = isDarkMode ? 'text-white' : 'text-black';
+    const textLabel = isDarkMode ? 'text-white' : 'text-black';
+    const textHelper = isDarkMode ? 'text-gray-300' : 'text-gray-600';
+    const borderDefault = isDarkMode ? 'border-white' : 'border-black';
+    const borderDivider = isDarkMode ? 'border-white/20' : 'border-black/20';
+    const bgInput = isDarkMode ? 'bg-black' : 'bg-white';
+    const focusAccent = 'focus:border-peacock-500 focus:ring-2 focus:ring-peacock-500';
+    const inputClasses = `w-full p-3 rounded-lg border transition-all duration-200 
+                          ${bgInput} ${textPrimary} ${borderDefault} 
+                          placeholder-opacity-50 ${focusAccent}`;
+    const closeButtonClasses = isDarkMode
+        ? 'text-white hover:bg-white hover:text-black'
+        : 'text-black hover:bg-black hover:text-white';
 
     return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center backdrop-blur-lg ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/60'}`}>
-            <div className={`rounded-lg shadow-2xl w-full max-w-lg border ${isDarkMode ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}>
-                <div className="flex justify-between items-center p-6 border-b border-gray-300 dark:border-gray-700">
-                    <h3 className={`text-xl font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                        Create New Manual Search
+        <div className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity backdrop-blur-sm ${isDarkMode ? 'bg-black/10' : 'bg-white/10'}`}>
+
+            <div className={`rounded-xl shadow-2xl w-full max-w-lg ${isDarkMode ? 'bg-black' : 'bg-white'} transition-colors duration-300`}>
+
+                <div className={`flex justify-between items-center p-6 border-b ${borderDivider}`}>
+                    <h3 className="text-xl font-bold">
+                        New Manual Search (Strike)
                     </h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-300 dark:hover:text-gray-100">
+                    <button
+                        onClick={onClose}
+                        className={`p-1 rounded-full ${closeButtonClasses} transition-colors`}
+                        aria-label="Close"
+                    >
+
                         <X className="w-6 h-6" />
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
+
                     <div>
-                        <label htmlFor="projectName" className="block text-sm font-medium mb-1 text-gray-700">Project Name <span className="text-red-500">*</span></label>
-                        <input type="text" id="projectName" value={projectName} onChange={(e) => setProjectName(e.target.value)} className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 placeholder-gray-500 border-gray-300 focus:border-peacock-600" required />
+                        <label htmlFor="projectName" className={`block text-sm font-medium mb-2 ${textLabel}`}>Project Name <span className="text-red-500">*</span></label>
+                        <input
+                            type="text"
+                            id="projectName"
+                            value={projectName}
+                            onChange={(e) => setProjectName(e.target.value)}
+                            className={inputClasses}
+                            required
+                            placeholder=""
+                        />
                     </div>
+
                     <div>
-                        <label htmlFor="description" className="block text-sm font-medium mb-1 text-gray-700">Description</label>
-                        <textarea id="description" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 placeholder-gray-500 border-gray-300 focus:border-peacock-600 resize-none" />
+                        <label htmlFor="description" className={`block text-sm font-medium mb-2 ${textLabel}`}>Description</label>
+                        <textarea
+                            id="description"
+                            rows={2}
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            className={`${inputClasses} resize-none`}
+                            placeholder="Briefly describe the objective of this search."
+                        />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="startDate" className="block text-sm font-medium mb-1 text-gray-700">Start Date</label>
-                            <DatePicker selected={startDate} onChange={setStartDate} maxDate={new Date()} dateFormat="dd-MM-yyyy" className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 border-gray-300 focus:border-peacock-600" />
+
+                    <div>
+                        <label className={`block text-sm font-medium mb-2 ${textLabel}`}>
+                            Date
+                        </label>
+                        <div className="relative">
+                            <DatePicker
+                                selected={startDate}
+                                onChange={(dates) => {
+                                    const [start, end] = dates;
+                                    setStartDate(start);
+                                    setEndDate(end);
+                                }}
+                                startDate={startDate}
+                                endDate={endDate}
+                                selectsRange
+                                monthsShown={1}
+                                maxDate={new Date()}
+                                showMonthDropdown
+                                showYearDropdown
+                                dropdownMode="select"
+
+                                dateFormat="dd MMM yyyy"
+                                placeholderText="Select start and end date"
+
+                                className={`${inputClasses} w-full pl-10 cursor-pointer`}
+                                wrapperClassName="w-full"
+                                popperPlacement="bottom-start"
+                                isClearable={true}
+                            />
+                            <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
-                        <div>
-                            <label htmlFor="endDate" className="block text-sm font-medium mb-1 text-gray-700">End Date</label>
-                            <DatePicker selected={endDate} onChange={setEndDate} minDate={startDate} maxDate={new Date()} dateFormat="dd-MM-yyyy" className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 border-gray-300 focus:border-peacock-600" />
-                        </div>
+                        <p className={`text-xs mt-1 ${textHelper}`}>
+                            Select the start date, then click the end date.
+                        </p>
                     </div>
+
                     <div>
-                        <label htmlFor="keyword" className="block text-sm font-medium mb-1 text-gray-700">Keyword(s) <span className="text-red-500">*</span></label>
-                        <input type="text" id="keyword" value={keyword} onChange={(e) => setKeyword(e.target.value)} className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 placeholder-gray-500 border-gray-300 focus:border-peacock-600" required />
-                        <p className="text-xs mt-1 text-gray-600">Use standard X search operators (OR, -, #, @, etc.)</p>
+                        <label htmlFor="keyword" className={`block text-sm font-medium mb-2 ${textLabel}`}>Keyword(s) <span className="text-red-500">*</span></label>
+                        <input
+                            type="text"
+                            id="keyword"
+                            value={keyword}
+                            onChange={(e) => setKeyword(e.target.value)}
+                            className={inputClasses}
+                            required
+                            placeholder="e.g., #Misinformation OR 'fake news'"
+                        />
+
                     </div>
+
                     <div className="flex justify-end pt-4">
-                        <button type="submit" className="flex w-full items-center justify-center px-6 py-3 font-medium text-white capitalize rounded-lg bg-peacock-600 hover:bg-peacock-500 transition-colors">
+                        <button
+                            type="submit"
+                            disabled={!projectName || !keyword}
+                            className="flex w-full items-center justify-center px-6 py-3 font-semibold text-white capitalize rounded-lg bg-peacock-600 hover:bg-peacock-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
                             <Search className="w-5 h-5 mr-2" />
                             Start Scraping
                         </button>
@@ -313,7 +537,7 @@ const AVAILABLE_SOURCES = [
 function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
     const [projectName, setProjectName] = useState('');
     const [keywords, setKeywords] = useState('');
-    const [selectedSources, setSelectedSources] = useState(new Set(['x']));
+    const [selectedSources, setSelectedSources] = useState(new Set());
 
     const handleSourceToggle = (sourceId) => {
         const newSelection = new Set(selectedSources);
@@ -327,59 +551,80 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+
+        if (!projectName || !keywords || selectedSources.size === 0) return;
+
         const sources = AVAILABLE_SOURCES
             .filter(s => selectedSources.has(s.id))
-            .map(s => ({ id: s.id, name: s.name, status: 'Active' }));
+            .map(s => ({ 
+                id: s.id, 
+                name: s.name, 
+                status: 'Active',
+                // Map 'x' -> 'twitter', others remain same
+                platformKey: s.id === 'x' ? 'twitter' : s.id 
+            }));
+
         onCreate({ projectName, keywords, sources });
     };
 
+    const borderDefault = isDarkMode ? 'border-white' : 'border-white';
+    const borderDivider = isDarkMode ? 'border-white/30' : 'border-black/30';
+    const textPrimary = isDarkMode ? 'text-white' : 'text-black';
+    const textLabel = isDarkMode ? 'text-white' : 'text-black';
+    const textHelper = isDarkMode ? 'text-gray-400' : 'text-gray-600';
+    const bgInput = isDarkMode ? 'bg-black' : 'bg-white';
+    const focusAccent = 'focus:border-peacock-500 focus:ring-2 focus:ring-peacock-500';
+    const inputClasses = `w-full p-3 rounded-lg border transition-all duration-200 ${bgInput} ${textPrimary} ${borderDefault} placeholder-opacity-50 ${focusAccent}`;
+    const closeButtonClasses = isDarkMode ? 'text-white hover:bg-white hover:text-black' : 'text-black hover:bg-black hover:text-white';
+
     return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center backdrop-blur-lg ${isDarkMode ? 'bg-black/80' : 'bg-gray-900/60'}`}>
-            <div className={`rounded-lg shadow-2xl w-full max-w-lg border ${isDarkMode ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-gray-900 border-gray-300'}`}>
-                <div className="flex justify-between items-center p-6 border-b border-gray-300 dark:border-gray-700">
-                    <h3 className={`text-xl font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                        New Automated Project
-                    </h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-300 dark:hover:text-gray-100">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity backdrop-blur-sm ${isDarkMode ? 'bg-black/10' : 'bg-white/10'}`}>
+            <div className={`rounded-xl shadow-2xl w-full max-w-lg ${isDarkMode ? 'bg-black' : 'bg-white'} transition-colors duration-300`}>
+                <div className={`flex justify-between items-center p-6 border-b ${borderDivider}`}>
+                    <h3 className={`text-xl font-bold ${textPrimary}`}>New Project</h3>
+                    <button onClick={onClose} className={`p-1 rounded-full ${closeButtonClasses} transition-colors`} aria-label="Close">
                         <X className="w-6 h-6" />
                     </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-6 space-y-6">
                     <div>
-                        <label htmlFor="projectName" className="block text-sm font-medium mb-1 text-gray-700">Project Name <span className="text-red-500">*</span></label>
-                        <input type="text" id="projectName" value={projectName} onChange={(e) => setProjectName(e.target.value)} className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 placeholder-gray-500 border-gray-300 focus:border-peacock-600" required />
+                        <label htmlFor="projectName" className={`block text-sm font-medium mb-2 ${textLabel} `}>Project Name <span className="text-red-500">*</span></label>
+                        <input type="text" id="projectName" value={projectName} onChange={(e) => setProjectName(e.target.value)} className={inputClasses} required placeholder="e.g., New Target Analysis" />
                     </div>
                     <div>
-                        <label htmlFor="keywords" className="block text-sm font-medium mb-1 text-gray-700">Keywords <span className="text-red-500">*</span></label>
-                        <input type="text" id="keywords" value={keywords} onChange={(e) => setKeywords(e.target.value)} className="w-full p-3 rounded-md border-2 bg-gray-50 text-gray-900 placeholder-gray-500 border-gray-300 focus:border-peacock-600" required />
-                        <p className="text-xs mt-1 text-gray-600">Use (OR) to separate. e.g., protest OR rally OR gautham</p>
+                        <label htmlFor="keywords" className={`block text-sm font-medium mb-2 ${textLabel}`}>Keywords <span className="text-red-500">*</span></label>
+                        <input type="text" id="keywords" value={keywords} onChange={(e) => setKeywords(e.target.value)} className={inputClasses} required placeholder="e.g: protest OR rally" />
+                        <p className={`text-xs mt-1 ${textHelper}`}>Use (OR) to separate</p>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-2 text-gray-700">Select Sources <span className="text-red-500">*</span></label>
+                        <label className={`block text-sm font-medium mb-3 ${textLabel}`}>Select Sources <span className="text-red-500">*</span></label>
                         <div className="grid grid-cols-3 gap-4">
                             {AVAILABLE_SOURCES.map(source => {
                                 const isSelected = selectedSources.has(source.id);
+                                const isDisabled = !source.enabled;
+                                const baseClasses = 'p-4 border-2 rounded-xl flex flex-col items-center justify-center transition-all duration-200';
+                                let stateClasses = '';
+                                if (isDisabled) {
+                                    stateClasses = `${isDarkMode ? 'bg-black border-white/30 opacity-40' : 'bg-white border-black/30 opacity-40'} cursor-not-allowed ${textPrimary}`;
+                                } else if (isSelected) {
+                                    stateClasses = `border-peacock-500 ${isDarkMode ? 'bg-peacock-900 text-peacock-200' : 'bg-peacock-50 text-peacock-800'} font-bold`;
+                                } else {
+                                    stateClasses = `${bgInput} ${borderDefault} hover:border-peacock-500 ${textPrimary} cursor-pointer`;
+                                }
                                 return (
-                                    <button
-                                        type="button"
-                                        key={source.id}
-                                        onClick={() => source.enabled && handleSourceToggle(source.id)}
-                                        disabled={!source.enabled}
-                                        className={`p-4 border-2 rounded-lg flex flex-col items-center justify-center transition-all ${isSelected ? 'border-peacock-500 bg-peacock-50' : 'border-gray-300 bg-white'
-                                            } ${source.enabled ? 'cursor-pointer hover:border-peacock-400' : 'cursor-not-allowed bg-gray-100 opacity-50'}`}
-                                    >
-                                        <source.icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-peacock-600' : 'text-gray-500'}`} />
-                                        <span className="text-sm font-medium">{source.name}</span>
-                                        {!source.enabled && <span className="text-xs text-red-500 mt-1">(Soon)</span>}
+                                    <button type="button" key={source.id} onClick={() => handleSourceToggle(source.id)} disabled={isDisabled} className={`${baseClasses} ${stateClasses}`}>
+                                        <source.icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-peacock-400' : textPrimary}`} />
+                                        <span className="text-sm font-semibold">{source.name}</span>
+                                        {isDisabled && <span className="text-xs text-red-500 mt-1 font-medium">(Soon)</span>}
                                     </button>
                                 );
                             })}
                         </div>
+                        {selectedSources.size === 0 && (<p className="text-sm text-red-500 mt-2 font-medium">Please select at least one source.</p>)}
                     </div>
-                    <div className="flex justify-end pt-4">
-                        <button type="submit" className="flex w-full items-center justify-center px-6 py-3 font-medium text-white capitalize rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors">
-                            <Plus className="w-5 h-5 mr-2" />
-                            Create Project
+                    <div className="flex justify-end pt-2">
+                        <button type="submit" disabled={!projectName || !keywords || selectedSources.size === 0} className="flex w-full items-center justify-center px-6 py-3 font-semibold text-white capitalize rounded-lg bg-peacock-600 hover:bg-peacock-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <Plus className="w-5 h-5 mr-2" /> Create Project
                         </button>
                     </div>
                 </form>
@@ -387,27 +632,168 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
         </div>
     );
 }
+// function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
+//     const [projectName, setProjectName] = useState('');
+//     const [keywords, setKeywords] = useState('');
+//     const [selectedSources, setSelectedSources] = useState(new Set());
 
+//     const handleSourceToggle = (sourceId) => {
+//         const newSelection = new Set(selectedSources);
+
+//         if (newSelection.has(sourceId)) {
+//             newSelection.delete(sourceId);
+//         } else {
+//             newSelection.add(sourceId);
+//         }
+//         setSelectedSources(newSelection);
+//     };
+
+//     const handleSubmit = (e) => {
+//         e.preventDefault();
+
+//         if (!projectName || !keywords || selectedSources.size === 0) return;
+
+//         const sources = AVAILABLE_SOURCES
+//             .filter(s => selectedSources.has(s.id))
+//             .map(s => ({ id: s.id, name: s.name, status: 'Active' }));
+
+//         onCreate({ projectName, keywords, sources });
+//     };
+
+//     const borderDefault = isDarkMode ? 'border-white' : 'border-white';
+//     const borderDivider = isDarkMode ? 'border-white/30' : 'border-black/30';
+
+//     const textPrimary = isDarkMode ? 'text-white' : 'text-black';
+//     const textLabel = isDarkMode ? 'text-white' : 'text-black';
+//     const textHelper = isDarkMode ? 'text-gray-400' : 'text-gray-600';
+    
+//     const bgInput = isDarkMode ? 'bg-black' : 'bg-white';
+//     const focusAccent = 'focus:border-peacock-500 focus:ring-2 focus:ring-peacock-500';
+//     const inputClasses = `w-full p-3 rounded-lg border transition-all duration-200 
+//                           ${bgInput} ${textPrimary} ${borderDefault} 
+//                           placeholder-opacity-50 ${focusAccent}`;
+
+//     const closeButtonClasses = isDarkMode
+//         ? 'text-white hover:bg-white hover:text-black'
+//         : 'text-black hover:bg-black hover:text-white';
+
+
+//     return (
+//         <div className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity backdrop-blur-sm ${isDarkMode ? 'bg-black/10' : 'bg-white/10'}`}>
+
+//             <div className={`rounded-xl shadow-2xl w-full max-w-lg ${isDarkMode ? 'bg-black' : 'bg-white'} transition-colors duration-300`}>
+
+//                 <div className={`flex justify-between items-center p-6 border-b ${borderDivider}`}>
+//                     <h3 className={`text-xl font-bold ${textPrimary}`}>
+//                         Open New Case
+//                     </h3>
+//                     <button
+//                         onClick={onClose}
+//                         className={`p-1 rounded-full ${closeButtonClasses} transition-colors`}
+//                         aria-label="Close"
+//                     >
+//                         <X className="w-6 h-6" />
+//                     </button>
+//                 </div>
+
+//                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
+
+//                     <div>
+//                         <label htmlFor="projectName" className={`block text-sm font-medium mb-2 ${textLabel} `}>Project Name <span className="text-red-500">*</span></label>
+//                         <input
+//                             type="text"
+//                             id="projectName"
+//                             value={projectName}
+//                             onChange={(e) => setProjectName(e.target.value)}
+//                             className={inputClasses}
+//                             required
+//                             placeholder="e.g., New Target Analysis"
+//                         />
+//                     </div>
+
+//                     <div>
+//                         <label htmlFor="keywords" className={`block text-sm font-medium mb-2 ${textLabel}`}>Keywords <span className="text-red-500">*</span></label>
+//                         <input
+//                             type="text"
+//                             id="keywords"
+//                             value={keywords}
+//                             onChange={(e) => setKeywords(e.target.value)}
+//                             className={inputClasses}
+//                             required
+//                             placeholder="e.g: protest OR rally"
+//                         />
+//                         <p className={`text-xs mt-1 ${textHelper}`}>Use (OR) to separate</p>
+//                     </div>
+
+//                     <div>
+//                         <label className={`block text-sm font-medium mb-3 ${textLabel}`}>Select Sources <span className="text-red-500">*</span></label>
+//                         <div className="grid grid-cols-3 gap-4">
+//                             {AVAILABLE_SOURCES.map(source => {
+//                                 const isSelected = selectedSources.has(source.id);
+//                                 const isDisabled = !source.enabled;
+
+//                                 const baseClasses = 'p-4 border-2 rounded-xl flex flex-col items-center justify-center transition-all duration-200';
+
+//                                 let stateClasses = '';
+
+//                                 if (isDisabled) {
+//                                     stateClasses = `${isDarkMode ? 'bg-black border-white/30 opacity-40' : 'bg-white border-black/30 opacity-40'} cursor-not-allowed ${textPrimary}`;
+//                                 } else if (isSelected) {
+//                                     stateClasses = `border-peacock-500 ${isDarkMode ? 'bg-peacock-900 text-peacock-200' : 'bg-peacock-50 text-peacock-800'} font-bold`;
+//                                 } else {
+//                                     stateClasses = `${bgInput} ${borderDefault} hover:border-peacock-500 ${textPrimary} cursor-pointer`;
+//                                 }
+
+//                                 return (
+//                                     <button
+//                                         type="button"
+//                                         key={source.id}
+//                                         onClick={() => handleSourceToggle(source.id)}
+//                                         disabled={isDisabled}
+//                                         className={`${baseClasses} ${stateClasses}`}
+//                                     >
+//                                         <source.icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-peacock-400' : textPrimary}`} />
+//                                         <span className="text-sm font-semibold">{source.name}</span>
+//                                         {isDisabled && <span className="text-xs text-red-500 mt-1 font-medium">(Soon)</span>}
+//                                     </button>
+//                                 );
+//                             })}
+//                         </div>
+//                         {selectedSources.size === 0 && (
+//                             <p className="text-sm text-red-500 mt-2 font-medium">Please select at least one source.</p>
+//                         )}
+//                     </div>
+
+//                     <div className="flex justify-end pt-2">
+//                         <button
+//                             type="submit"
+//                             disabled={!projectName || !keywords || selectedSources.size === 0}
+//                             className="flex w-full items-center justify-center px-6 py-3 font-semibold text-white capitalize rounded-lg bg-peacock-600 hover:bg-peacock-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+//                         >
+//                             <Plus className="w-5 h-5 mr-2" />
+//                             Create Project
+//                         </button>
+//                     </div>
+//                 </form>
+//             </div>
+//         </div>
+//     );
+// }
 
 function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
     const [search, setSearch] = useState('');
 
     const getStatusClass = (status) => {
-        if (status === 'Running') return 'text-green-500';
-        if (status === 'Completed') return 'text-blue-500';
-        if (status === 'Stopped') return 'text-gray-500';
+        if (status === 'Running') return 'text-blue-700 bg-blue-100 rounded-sm p-1';
+        if (status === 'Completed') return 'text-green-700 bg-green-100 rounded-sm p-1';
+        if (status === 'Stopped') return 'text-red-700 bg-red-100 rounded-sm p-1  ';
         return 'text-gray-500';
     };
 
-    const getTypeClass = (type) => {
-        if (type === 'Manual') return 'bg-peacock-100 text-peacock-800';
-        if (type === 'Automated') return 'bg-blue-100 text-blue-800';
-        return 'bg-gray-100 text-gray-800';
-    };
-    
+
     const filteredProjects = projects.filter(p =>
-        (p.name?.toLowerCase().includes(search.toLowerCase()) ||
-            p.keyword?.toLowerCase().includes(search.toLowerCase()))
+    (p.name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.keyword?.toLowerCase().includes(search.toLowerCase()))
     );
 
     return (
@@ -438,17 +824,9 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
                     </thead>
                     <tbody className="bg-subtle ">
                         {isLoading ? (
-                            <tr>
-                                <td colSpan="6" className="text-center p-8">
-                                    <Loader2 className="w-8 h-8 text-peacock-500 animate-spin inline-block" />
-                                </td>
-                            </tr>
+                            <tr><td colSpan="6" className="text-center p-8"><Loader2 className="w-8 h-8 text-peacock-500 animate-spin inline-block" /></td></tr>
                         ) : filteredProjects.length === 0 ? (
-                            <tr>
-                                <td colSpan="6" className="text-center p-8">
-                                    <p className="text-secondary">No {type} projects found.</p>
-                                </td>
-                            </tr>
+                            <tr><td colSpan="6" className="text-center p-8"><p className="text-secondary">No {type} projects found.</p></td></tr>
                         ) : (
                             filteredProjects.map((project) => (
                                 <tr key={project._id} className="hover:bg-primary">
@@ -456,23 +834,29 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
                                         <div className="text-sm font-semibold text-primary truncate">{project.name}</div>
                                         <div className="text-xs text-secondary">{project.description || 'No description'}</div>
                                     </td>
+
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary truncate">{project.keyword}</td>
-                                    {/* <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getTypeClass(project.type)}`}>
-                                            {project.type}
-                                        </span>
-                                    </td> */}
+
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold truncate">
                                         <span className={getStatusClass(project.status)}>{project.status}</span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary  ">{project.postCount || 0}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+
+
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary font-medium">
+                                        {project.postCount !== undefined && project.postCount !== null
+                                            ? project.postCount
+                                            : '-'}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-4">
+
                                         <button
                                             onClick={() => onViewAnalysis(project)}
-                                            className="text-peacock-500 hover:text-peacock-700"
+                                            className="text-peacock-500 hover:text-peacock-700 font-medium"
                                         >
-                                            <FileText className="w-5 h-5 inline-block mr-1" /> View Analysis
+                                            View Analysis
                                         </button>
+
+
                                     </td>
                                 </tr>
                             ))
@@ -484,27 +868,30 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
     );
 }
 
-function AnalysisResults({ project, initialData, onBack }) {
+function AnalysisResults({ project, initialData, onBack, onRefreshData }) {
     const [posts, setPosts] = useState(initialData.posts);
     const [summary, setSummary] = useState(initialData.summary);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [postSearch, setPostSearch] = useState('');
+    const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
+    const [localProject, setLocalProject] = useState(project);
 
-    const handleGenerateSummary = async () => {
-        if (!project) return;
+    useEffect(() => { setPosts(initialData.posts); }, [initialData]);
+
+    const handleGenerateSummaryAndRisk = async () => {
+        if (summary && !window.confirm("Re-run AI analysis? This consumes tokens.")) return;
         setIsSummarizing(true);
-        toast('Sending posts to AI for analysis...');
+        toast('Running full AI Summary and Risk Triage');
         try {
-            const response = await fetch(`http://localhost:5001/api/projects/${project._id}/summarize`, {
-                method: 'POST',
-            });
-            if (!response.ok) throw new Error('Failed to generate summary');
+            const response = await fetch(`http://localhost:5001/api/projects/${project._id}/summarize`, { method: 'POST' });
+            if (!response.ok) throw new Error('Failed');
             const { summary: newSummary } = await response.json();
             setSummary(newSummary);
             toast.success('Summary generated!');
+            onRefreshData();
         } catch (error) {
-            console.error("Error generating summary:", error);
-            toast.error('Failed to generate summary.');
+            console.error("AI Error:", error);
+            toast.error('AI pipeline failed.');
         } finally {
             setIsSummarizing(false);
         }
@@ -515,125 +902,182 @@ function AnalysisResults({ project, initialData, onBack }) {
         post.username?.toLowerCase().includes(postSearch.toLowerCase())
     );
 
-    const aiSummary = summary || "No summary has been generated for this project yet.";
-    const formattedSummary = aiSummary
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n/g, '<br />');
+    const getRiskColor = (risk) => {
+        if (risk === 'High') return 'bg-red-100 text-red-800 border-red-200';
+        if (risk === 'Medium') return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-green-100 text-green-800 border-green-200';
+    };
 
-    const platformData = [{ name: 'X', value: posts.length }];
-    const PLATFORM_COLORS = { 'X': '#0b0b0bff' };
+    // const formattedSummary = (summary || "No summary yet.").replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br />');
+
+    const isHtml = summary && summary.trim().startsWith("<");
+    const formattedSummary = isHtml
+        ? summary
+        : (summary || "No summary yet.").replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br />');
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-semibold text-primary">Analysis for: "{project.name}"</h3>
-                <button
-                    onClick={onBack}
-                    className="flex items-center px-4 py-2 text-sm font-medium text-white bg-black hover:scale-104 rounded-lg hover:bg-peacock-600 focus:outline-none"
-                >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back to Project List
-                </button>
-            </div>
-            <div className="bg-subtle rounded-lg shadow-lg p-6">
-                <div className="flex justify-between items-center mb-3">
-                    <h4 className="flex items-center text-lg font-semibold text-primary">
-                        <Bot className="w-5 h-5 mr-2 text-peacock-500" />
-                        Threat Intelligence Summary
-                    </h4>
-                    {!summary && (
+            {isSourceModalOpen && (
+                <SourceControlModal
+                    project={localProject}
+                    onClose={() => setIsSourceModalOpen(false)}
+                    onUpdate={(updatedSources) => {
+                        setLocalProject({ ...localProject, sources: updatedSources });
+                        if (onRefreshData) onRefreshData();
+                    }}
+                />
+            )}
+
+            <div className="flex justify-between items-center gap-4">
+                <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <button
+                        onClick={onBack}
+                        className="flex items-center px-4 py-2 text-sm font-medium hover:scale-105 rounded-lg transition-transform whitespace-nowrap"
+                    >
+                        <ArrowLeft className="w-4 h-4 mr-2" /> Back
+                    </button>
+
+                    <h3 className="text-2xl font-semibold text-primary truncate">
+                        Analysis: "{localProject.name}"
+                    </h3>
+                </div>
+
+                <div className="flex items-center gap-3 flex-shrink-0">
+                    <button
+                        onClick={() => generateCaseReport(localProject, posts, summary)}
+                        className="px-5 py-2 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 hover:scale-105 transition-all"
+                    >
+                        Export Report
+                    </button>
+
+                    {localProject.type === 'Automated' && (
                         <button
-                            onClick={handleGenerateSummary}
-                            disabled={isSummarizing}
-                            className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-peacock-600 rounded hover:bg-peacock-500 disabled:bg-gray-400"
+                            onClick={() => setIsSourceModalOpen(true)}
+                            className="px-5 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 hover:scale-105 transition-all"
                         >
-                            {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4 mr-1" />}
-                            Generate Summary
+                            Manage Sources
                         </button>
                     )}
                 </div>
-                {isSummarizing && !summary && (
-                    <p className="text-secondary italic">Generating summary... this can take a minute.</p>
-                )}
-                <p
-                    className="text-secondary leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: formattedSummary }}
-                />
-                {summary && (
-                    <div className="flex gap-4 mt-6">
-                        <button
-                            onClick={() => exportSummaryToPDF(aiSummary, project.name)}
-                            className="flex items-center px-4 py-2 text-sm font-medium text-white bg-peacock-600 rounded-lg hover:bg-peacock-500 transition-colors"
-                        >
-                            <Download className="w-4 h-4 mr-2" /> Download Summary (PDF)
-                        </button>
-                    </div>
-                )}
             </div>
+
             <div className="bg-subtle rounded-lg shadow-lg p-6">
-                <h4 className="flex items-center text-lg font-semibold text-primary mb-3">
-                    <Inbox className="w-5 h-5 mr-2 text-yellow-500" />
-                    Post Triage
-                </h4>
-                <p className="text-secondary mb-4">Filter posts by their sentiment or risk level.</p>
-                <div className="flex gap-4">
-                    <button className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-500 disabled:bg-gray-400">
-                        Run Risk Analysis (AI)
-                    </button>
-                    <p className="text-secondary italic">(Feature coming soon)</p>
-                </div>
-            </div>
-            <div className="bg-subtle rounded-lg overflow-hidden">
-                <div className="p-4 flex justify-between items-center">
-                    <h4 className="text-lg font-semibold text-primary">
-                        Source Data ({filteredPosts.length} of {posts.length} Posts)
+                <div className="flex justify-between items-center mb-3">
+                    <h4 className="flex items-center text-lg font-semibold text-primary">
+                        <Bot className="w-5 h-5 mr-2 text-peacock-500" /> Intelligence Summary
                     </h4>
-                    <div className="flex gap-4">
-                        <div className="relative w-full max-w-sm">
-                            <input
-                                type="text"
-                                placeholder="Search posts..."
-                                onChange={(e) => setPostSearch(e.target.value)}
-                                className="w-full p-2 pl-10 rounded-md border-2 bg-primary border-primary focus:border-peacock-500 focus:outline-none text-primary"
-                            />
-                            <Search className="w-5 h-5 text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
-                        </div>
-                        <button
-                            onClick={() => exportPostsToExcel(filteredPosts, project.name)}
-                            className="flex items-center px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200"
-                        >
-                            <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Excel
-                        </button>
+                    <button onClick={handleGenerateSummaryAndRisk} disabled={isSummarizing} className="flex items-center px-3 py-1.5 text-xs font-medium text-white bg-peacock-600 rounded hover:bg-peacock-500 disabled:bg-gray-400">
+                        {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 mr-1" />} Generate Analysis
+                    </button>
+                </div>
+                <p className="text-secondary leading-relaxed" dangerouslySetInnerHTML={{ __html: formattedSummary }} />
+            </div>
+
+            <div className="bg-subtle rounded-lg overflow-hidden shadow-sm">
+                <div className="p-4 flex justify-between items-center border-b border-primary">
+                    <h4 className="text-lg font-semibold text-primary">Live Feed ({filteredPosts.length} Posts)</h4>
+                    <div className="relative w-64">
+                        <input type="text" placeholder="Search content..." onChange={(e) => setPostSearch(e.target.value)} className="w-full p-2 pl-8 rounded border bg-primary focus:outline-none" />
+                        <Search className="w-4 h-4 text-secondary absolute left-2 top-3" />
                     </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full">
-                        <thead className="bg-primary border-b-4">
+                        <thead className="bg-primary border-b-2 border-gray-200">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Source</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Username</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Content</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-secondary uppercase tracking-wider">Source Link</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-secondary uppercase tracking-wider">Risk</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-secondary uppercase tracking-wider">User</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-secondary uppercase tracking-wider w-1/3">Content</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-secondary uppercase tracking-wider">Forensic Intel</th>
+                                <th className="px-6 py-3 text-left text-xs font-bold text-secondary uppercase tracking-wider">Action</th>
                             </tr>
                         </thead>
                         <tbody className="bg-subtle divide-y divide-primary">
-                            {filteredPosts.map((post) => (
-                                <tr key={post.id} className="hover:bg-primary">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">{post.platform}</td>
-                                    <td className="px-6 py-4 max-w-[200px] overflow-hidden text-ellipsis truncate whitespace-nowrap text-sm text-primary font-medium">@{post.username}</td>
-                                    <td className="px-6 py-4 max-w-[400px] overflow-hidden text-ellipsis">
-                                        <div className="text-sm text-primary truncate max-w-lg">{post.content}</div>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <button
-                                            className="text-peacock-500 hover:text-peacock-700"
-                                            onClick={() => window.open(post.url, '_blank')}
-                                        >
-                                            View
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {filteredPosts.map((post) => {
+                                const intel = post.enrichmentData || {};
+                                const phones = intel.extracted_phones || [];
+                                const upis = intel.extracted_upis || [];
+                                const entities = intel.ner_entities || [];
+                                const flags = intel.risk_flags || [];
+
+                                const ocrText = intel.ocr_text;
+
+                                const hasIntel = phones.length > 0 || upis.length > 0 || entities.length > 0 || flags.length > 0 || ocrText;
+
+                                return (
+                                    <tr key={post.id} className="hover:bg-primary transition-colors">
+                                        <td className="px-6 py-4 align-top">
+                                            {post.risk ? (
+                                                <span className={`px-2 py-1 text-xs font-bold rounded border ${getRiskColor(post.risk)}`}>
+                                                    {post.risk.toUpperCase()}
+                                                </span>
+                                            ) : <span className="text-xs text-gray-400">Processing...</span>}
+
+                                            {post.sentiment && (
+                                                <div className="mt-2 text-xs  bg-white p-1 w-18 rounded-sm text-secondary">
+                                                    <span className='text-black font-semibold '>SENTIMENT</span> <span className={`font-medium  ${post.sentiment === 'Negative' ? 'text-red-500' : 'text-green-600'}`}>{post.sentiment}</span>
+                                                </div>
+                                            )}
+                                        </td>
+
+                                        <td className="px-6 py-4 align-top">
+                                            <div className="text-sm font-bold text-primary">@{post.username}</div>
+                                            <div className="text-xs text-gray-500">{post.timestamp}</div>
+                                        </td>
+
+                                        <td className="px-6 py-4 align-top">
+                                            <p className="text-sm text-primary mb-2 line-clamp-3">{post.content}</p>
+                                            {post.screenshotPath && (
+                                                <div className="space-y-1">
+                                                    <a href={`http://localhost:5001${post.screenshotPath}`} target="_blank" rel="noreferrer" className="inline-flex items-center text-xs text-blue-600 hover:underline">
+                                                        <FileText className="w-3 h-3 mr-1" /> Evidence Snapshot
+                                                    </a>
+
+                                                </div>
+                                            )}
+                                        </td>
+
+                                        <td className="px-6 py-4 align-top">
+                                            {hasIntel ? (
+                                                <div className="space-y-1">
+                                                    {phones.map((p, i) => (
+                                                        <div key={`p-${i}`} className="flex items-center text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100">
+                                                            <span className="mr-1"></span> {p}
+                                                        </div>
+                                                    ))}
+                                                    {upis.map((u, i) => (
+                                                        <div key={`u-${i}`} className="flex items-center text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-100">
+                                                            <span className="mr-1"></span> {u}
+                                                        </div>
+                                                    ))}
+                                                    {flags.slice(0, 2).map((f, i) => (
+                                                        <div key={`f-${i}`} className="flex items-center text-xs bg-red-50 text-red-700 px-2 py-1 rounded border border-red-100">
+                                                            <span className="mr-1"></span> {f.replace('Keyword: ', '')}
+                                                        </div>
+                                                    ))}
+
+
+                                                    {ocrText && <OCRViewer text={ocrText} />}
+
+                                                    {entities.slice(0, 2).map((e, i) => (
+                                                        <div key={`e-${i}`} className="flex items-center text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded border border-gray-200">
+                                                            <span className="mr-1">👤</span> {e}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">No specific entities found</span>
+                                            )}
+                                        </td>
+
+                                        <td className="px-6 py-4 align-top">
+                                            <button onClick={() => window.open(post.url, '_blank')} className="text-blue-600 hover:scale-105 text-xs font-semibold px-3 py-1 rounded bg-blue-50 transition">
+                                                View Post
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
