@@ -2,15 +2,14 @@ import React from 'react';
 import { NavLink } from 'react-router-dom'; 
 import {
   LayoutDashboard,  Search, DatabaseZap, Users,
-  LogOut, Briefcase
+  LogOut, Briefcase, SearchCheck
 } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-  { name: 'Cases', icon: Briefcase, path: '/cases' },
-  { name: 'Search', icon: Search, path: '/search' },
-  { name: 'Harvesters', icon: DatabaseZap, path: '/harvesters' },
+  { name: 'Case', icon: Briefcase, path: '/Case' },
   { name: 'Settings', icon: Users, path: '/settings' },
+
 ];
 
 export default function Sidebar({ isOpen, setIsOpen, onLogout }) {
@@ -28,7 +27,7 @@ export default function Sidebar({ isOpen, setIsOpen, onLogout }) {
        
         {isOpen && (
           <span className="ml-2 text-2xl font-bold text-primary">
-            Antharangam
+            Antharangam <span className='text-xs text-white bg-gray-500 rounded-xl font-semibold p-1'>BETA</span>
           </span>
         )}
       </div>

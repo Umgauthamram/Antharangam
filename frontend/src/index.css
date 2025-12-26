@@ -44,3 +44,25 @@
     color: var(--peacock-600);
   }
 }
+
+@theme {
+  --color-peacock-50: #f0fdfa;
+  --color-peacock-100: #ccfbf1;
+  --color-peacock-200: #99f6e4;
+  --color-peacock-300: #5eead4;
+  --color-peacock-400: #2dd4bf;
+  --color-peacock-500: #14b8a6;
+  --color-peacock-600: #0d9488;
+  --color-peacock-700: #0f766e;
+  --color-peacock-800: #115e59;
+  --color-peacock-900: #134e4a;
+  --color-peacock-950: #042f2e;
+}
+
+@variant dark (&:where(.dark, .dark *)) {}
+
+
+html {
+  color-scheme: light dark;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}

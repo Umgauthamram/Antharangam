@@ -1,46 +1,11 @@
-// import React from 'react';
-// import KpiCard from '/src/components/dashboard/KpiCard.jsx';
-// import AlertTable from '/src/components/dashboard/AlertTable.jsx';
-// import { AlertTriangle, Briefcase, FileText, Clock } from 'lucide-react';
-
-// const MOCK_ALERTS = [
-//   { id: 1, severity: 'High', status: 'New', platform: 'X', content: "Selling illegal items, DM me. #buy #sell", timestamp: "2 mins ago", entities: ["phone", "keyword"] },
-//   { id: 2, severity: 'Critical', status: 'New', platform: 'Telegram', content: "Meeting at 5 PM, bring the package. UPI: example@upi", timestamp: "10 mins ago", entities: ["upi", "keyword"] },
-//   { id: 3, severity: 'Medium', status: 'New', platform: 'Dark Web', content: "New database for sale, 10 BTC. admin@onion...", timestamp: "45 mins ago", entities: ["crypto", "email"] },
-//   { id: 4, severity: 'Low', status: 'In Review', platform: 'X', content: "Just a regular post.", timestamp: "1 hour ago", entities: [] },
-//   { id: 5, severity: 'High', status: 'New', platform: 'X', content: "Contact 98XXXXXX10 for details.", timestamp: "2 hours ago", entities: ["phone"] },
-// ];
-
-// export default function Dashboard() {
-//   const kpiData = [
-//     { title: 'New Alerts (24h)', value: MOCK_ALERTS.length, icon: AlertTriangle, color: 'text-red-500' },
-//     { title: 'Cases Open', value: 3, icon: Briefcase, color: 'text-blue-500' },
-//     { title: 'Evidence Collected', value: 102, icon: FileText, color: 'text-peacock-500' },
-//     { title: 'Avg. Triage Time', value: '12m', icon: Clock, color: 'text-yellow-500' },
-//   ];
-
-//   return (
-//     <div>
-//       <h3 className="text-3xl font-medium text-primary">Dashboard</h3>
-
-//       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-6">
-//         {kpiData.map((item, index) => (
-//           <KpiCard key={index} item={item} />
-//         ))}
-//       </div>
-
-//       <div className="mt-8">
-//         <AlertTable alerts={MOCK_ALERTS} />
-//       </div>
-//     </div>
-//   );
-// }
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import AlertTable from '/src/components/dashboard/AlertTable.jsx'; // Make sure this path is correct
+import { toast } from 'react-hot-toast';
+import { Loader2, FileText, ExternalLink, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import apiClient from '../../services/apiService';
 
-// --- Mock Data for Charts & Table ---
+// --- MOCK DATA FOR CHARTS (Connect to Backend Aggregation API later) ---
 const alertSeverityData = [
   { name: 'Critical', value: 12 },
   { name: 'High', value: 38 },
@@ -49,86 +14,43 @@ const alertSeverityData = [
 ];
 
 const alertPlatformData = [
-  { name: 'X (Twitter)', value: 94 },
-  { name: 'Telegram', value: 121 },
-  { name: 'Dark Web', value: 18 },
-  { name: 'Forums', value: 46 },
+  { name: 'X (Twitter)', value: 156 },
+  { name: 'Telegram', value: 84 },
+  { name: 'Dark Web', value: 12 },
+  { name: 'Facebook', value: 27 },
+  { name: 'Reddit', value: 50 },
+
 ];
 
-const MOCK_ALERTS = [
-  { id: 1, severity: 'High', status: 'New', platform: 'X', content: "Selling illegal items, DM me. #buy #sell", timestamp: "2 mins ago", entities: ["phone", "keyword"] },
-  { id:2, severity: 'Critical', status: 'New', platform: 'Telegram', content: "Meeting at 5 PM, bring the package. UPI: example@upi", timestamp: "10 mins ago", entities: ["upi", "keyword"] },
-  { id: 3, severity: 'Medium', status: 'New', platform: 'Dark Web', content: "New database for sale, 10 BTC. admin@onion...", timestamp: "45 mins ago", entities: ["crypto", "email"] },
-  { id: 4, severity: 'Low', status: 'In Review', platform: 'X', content: "Just a regular post.", timestamp: "1 hour ago", entities: [] },
-  { id: 5, severity: 'High', status: 'New', platform: 'X', content: "Contact 98XXXXXX10 for details.", timestamp: "2 hours ago", entities: ["phone"] },
-];
-
-// Colors must match your theme
-const SEVERITY_COLORS = {
-  'Critical': '#ef4444', // red-500
-  'High': '#f97316',     // orange-500
-  'Medium': '#3b82f6',    // blue-500
-  'Low': '#8b5cf6',      // violet-500
-};
-
-const PLATFORM_COLORS = {
-  'X (Twitter)': '#0ea5e9', // sky-500
-  'Telegram': '#3b82f6',      // blue-500
-  'Dark Web': '#4f46e5',      // indigo-600
-  'Forums': '#a855f7',      // purple-500
-};
-
-// --- Main Component ---
-export default function Dashboard() {
-  return (
-    <div>
-      <h3 className="text-3xl font-medium text-primary">Dashboard</h3>
-      
-      {/* --- Charts Grid --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        <ChartCard title="Alerts by Severity">
-          <DonutChart data={alertSeverityData} colors={SEVERITY_COLORS} />
-        </ChartCard>
-        
-        <ChartCard title="Alerts by Platform">
-          <DonutChart data={alertPlatformData} colors={PLATFORM_COLORS} />
-        </ChartCard>
-      </div>
-
-      {/* --- Recent Alerts Table --- */}
-      <div className="mt-8">
-        <AlertTable alerts={MOCK_ALERTS} />
-      </div>
-    </div>
-  );
-}
-
-// --- Sub-Components ---
+const SEVERITY_COLORS = { 'Critical': '#dc2626', 'High': '#ea580c', 'Medium': '#2563eb', 'Low': '#8b5cf6' };
+const PLATFORM_COLORS = { 'X (Twitter)': '#585858ff', 'Telegram': '#229ED9', 'Dark Web': '#05631fff', 'Facebook': '#1877F2', 'Reddit': '#e33900ff' };
 
 function ChartCard({ title, children }) {
   return (
-    <div className="bg-subtle rounded-lg shadow-lg p-6 border border-primary">
-      <h4 className="text-lg font-semibold text-primary mb-4">{title}</h4>
-      <div className="h-64 w-full">
-        {children}
-      </div>
+    <div className="bg-white dark:bg-black rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 flex flex-col">
+      <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
+        {title}
+      </h4>
+      <div className="h-64 w-full flex-grow">{children}</div>
     </div>
   );
 }
 
 function DonutChart({ data, colors }) {
-  // Custom Tooltip to match theme
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-primary p-3 rounded-lg shadow-lg border border-primary">
-          <p className="text-sm text-secondary">{`${payload[0].name} : ${payload[0].value}`}</p>
+        <div className="bg-white dark:bg-gray-900 p-3 rounded-lg shadow-xl border border-gray-100 dark:border-gray-700 text-sm">
+          <p className="font-semibold text-gray-900 dark:text-white mb-1">{payload[0].name}</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            Count: <span className="font-mono font-bold text-gray-900 dark:text-white">{payload[0].value}</span>
+          </p>
         </div>
       );
     }
     return null;
   };
-  
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
@@ -139,17 +61,196 @@ function DonutChart({ data, colors }) {
           cx="50%"
           cy="50%"
           innerRadius={60}
-          outerRadius={90}
-          fill="#8884d8"
-          paddingAngle={5}
+          outerRadius={85}
+          paddingAngle={4}
+          cornerRadius={4}
         >
-          {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={colors[entry.name]} />
+          {data.map((entry) => (
+            <Cell 
+              key={entry.name} 
+              fill={colors[entry.name] || '#cbd5e1'} 
+              strokeWidth={0}
+            />
           ))}
         </Pie>
         <Tooltip content={<CustomTooltip />} />
-        <Legend />
+        <Legend 
+          verticalAlign="bottom" 
+          height={36} 
+          iconType="circle"
+          formatter={(value) => <span className="text-gray-600 dark:text-gray-400 font-medium ml-1">{value}</span>}
+        />
       </PieChart>
     </ResponsiveContainer>
+  );
+}
+
+function ProjectListCard({ title, projects, onViewProject, emptyMessage }) {
+  const listItems = projects.slice(0, 5);
+
+  return (
+    <div className="bg-white dark:bg-black rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden">
+      <div className="p-6 border-b border-gray-100 dark:border-gray-800">
+        <h4 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h4>
+      </div>
+      <div className="flex-grow p-0">
+        {listItems.length > 0 ? (
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {listItems.map((p) => (
+              <div key={p._id} className="group flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors">
+                <div className="min-w-0 flex-1 mr-4">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                    {p.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                    {p.keyword}
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  {p.postCount > 0 && (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300">
+                      {p.postCount} Items
+                    </span>
+                  )}
+                  
+                  <button
+                    onClick={() => onViewProject(p)}
+                    className="p-2 text-gray-400 hover:text-peacock-600 dark:hover:text-peacock-400 hover:bg-peacock-50 dark:hover:bg-peacock-900/20 rounded-lg transition-all"
+                    title="View Analysis"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 mb-3">
+              <FileText className="w-6 h-6 text-gray-400" />
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{emptyMessage}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [dashboardData, setDashboardData] = useState({
+    manual: [],
+    automated: [],
+    totalPosts: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  const handleViewProject = async (project) => {
+    const toastId = toast.loading("Loading case data...");
+    try {
+      const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
+
+      // 🔥 FIX: apiClient returns an Axios response object. 
+      // Use `res.data` directly. Do NOT use `await res.json()`.
+      const res = await apiClient.get(`/posts/by_source?source=${encodeURIComponent(sourceIdentifier)}`);
+      
+      const posts = res.data; // <--- CORRECTED LINE
+
+      const formattedPosts = posts.map(p => ({
+        ...p,
+        id: p._id,
+        timestamp: new Date(p.timestamp).toLocaleString('en-IN')
+      }));
+
+      toast.dismiss(toastId);
+      navigate('/case', {
+        state: {
+          view: 'analysis',
+          currentProject: project,
+          analysisData: {
+            posts: formattedPosts,
+            summary: project.summary
+          }
+        }
+      });
+
+    } catch (err) {
+      toast.dismiss(toastId);
+      console.error("Could not open project analysis:", err);
+      toast.error("Failed to load case data.");
+    }
+  };
+
+  useEffect(() => {
+    setIsLoading(true);
+    apiClient.get('/projects/main-projects')
+      .then(res => {
+        const data = res.data;
+        setDashboardData({
+          manual: data.manual || [],
+          automated: data.automated || [],
+          totalPosts: data.totalPosts || 0
+        });
+      })
+      .catch((error) => {
+        console.error("Error fetching dashboard data:", error);
+        toast.error("Could not load dashboard stats");
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-100px)]">
+        <Loader2 className="w-10 h-10 text-peacock-600 animate-spin mb-4" />
+        <p className="text-gray-500 font-medium">Loading Intelligence Dashboard...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
+      
+      {/* Header Stats */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Command Center</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Overview of active intelligence operations</p>
+        </div>
+        <div className="bg-peacock-50 dark:bg-peacock-900/20 px-4 py-2 rounded-lg border border-peacock-100 dark:border-peacock-800">
+          <span className="text-sm text-peacock-800 dark:text-peacock-200 font-medium">
+            Total Evidence Items: <span className="text-lg font-bold ml-1">{dashboardData.totalPosts}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard title="Threat Severity Distribution">
+          <DonutChart data={alertSeverityData} colors={SEVERITY_COLORS} />
+        </ChartCard>
+        <ChartCard title="Platform Coverage">
+          <DonutChart data={alertPlatformData} colors={PLATFORM_COLORS} />
+        </ChartCard>
+      </div>
+
+      {/* Projects Lists */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ProjectListCard
+          title="Recent Manual Strikes"
+          projects={dashboardData.manual}
+          onViewProject={handleViewProject}
+          emptyMessage="No manual search operations found."
+        />
+        <ProjectListCard
+          title="Active Automated Harvesters"
+          projects={dashboardData.automated}
+          onViewProject={handleViewProject}
+          emptyMessage="No automated monitoring jobs running."
+        />
+      </div>
+    </div>
   );
 }
