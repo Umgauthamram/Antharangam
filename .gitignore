@@ -1,0 +1,17 @@
+# Python
+venv/
+.env
+__pycache__/
+*.pyc
+
+# Playwright / Chromium
+backend/chromium_user_data/
+**/Cache/
+**/Cache_Data/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
