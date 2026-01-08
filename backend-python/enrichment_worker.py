@@ -10,6 +10,26 @@ from dotenv import load_dotenv
 import pytesseract
 from PIL import Image
 
+import sys
+
+# Windows Console Fix
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass # Python < 3.7
+
+def safe_print(msg):
+    try:
+        print(msg, flush=True)
+    except Exception:
+        # Fallback: remove non-ascii
+        try:
+            clean_msg = msg.encode('ascii', 'ignore').decode('ascii')
+            print(clean_msg, flush=True)
+        except: pass
+
+safe_print("--- PYTHON WORKER ALIVE AND LOADING ---")
+
 load_dotenv()
 
 ENRICHMENT_QUEUE_NAME = 'forensic-enrichment-jobs'
@@ -199,18 +219,27 @@ def process_enrichment_job(job_payload):
     )
     
     if result.matched_count > 0:
-        print(f"Success: Post {post_id} | Risk: {risk_label} | OCR Found: {len(ocr_text) > 0}")
+        print(f"Success: Post {post_id} | Risk: {risk_label} | ModCount: {result.modified_count}")
+        
+        # Immediate Verify
+        verify_doc = posts_collection.find_one({"twitterPostId": post_id})
+        if verify_doc:
+             print(f"VERIFY: DB Value for Risk: {verify_doc.get('risk', 'MISSING')}")
+        else:
+             print("VERIFY: Document vanished?!")
+             
         return True
     else:
-        print(f"Warning: Post {post_id} not found in DB.")
+        print(f"Warning: Post {post_id} not found in DB (Matched: 0).")
         return False
 
 if __name__ == "__main__":
-    print(f"RQ Worker (OCR Enabled) listening on '{ENRICHMENT_QUEUE_NAME}'")
+    print(f"RQ Worker (OCR Enabled) listening on '{ENRICHMENT_QUEUE_NAME}'", flush=True)
     while True:
         try:
             job_result = redis_conn.blpop(ENRICHMENT_QUEUE_NAME, timeout=5)
             if job_result:
+                print("Worker: Received Job from Redis!", flush=True)
                 payload_str = job_result[1]
                 try:
                     job_payload = json.loads(payload_str)

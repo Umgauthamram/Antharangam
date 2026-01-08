@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { useDarkMode } from '../../hooks/useDarkMode'; 
+import { useDarkMode } from '../../hooks/useDarkMode';
 import Sidebar from './Sidebar';
 
 
@@ -11,12 +11,13 @@ export default function MainLayout() {
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    sessionStorage.clear();
     navigate('/login');
   };
 
   return (
     <div className={`flex h-screen bg-primary text-primary overflow-hidden ${isDarkMode ? 'dark' : ''}`}>
-      <Toaster 
+      <Toaster
         position="top-center"
         toastOptions={{
           style: {

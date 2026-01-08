@@ -4,7 +4,7 @@ import { projects as projectsCollection } from '../services/db.js';
 import { analyzeRiskBatch, runFullProjectAnalysis } from '../services/aiService.js';
 
 import { addEnrichmentJob } from '../services/queueService.js';
-import { startHarvester,stopHarvester } from '../services/harvesterManager.js';
+import { startHarvester, stopHarvester } from '../services/harvesterManager.js';
 import { ObjectId } from 'mongodb';
 
 
@@ -33,23 +33,28 @@ export const getPostsBySource = async (req, res) => {
 
     let posts = await db.collection('posts').find({ source: source }).sort({ timestamp: -1 }).toArray();
 
-   if (posts.length === 0) {
+    if (posts.length === 0) {
       console.log(`[API] No posts for '${source}'. Trying 'harvester-${source}'...`);
       posts = await db.collection('posts').find({ source: `harvester-${source}` }).sort({ timestamp: -1 }).toArray();
     }
 
     if (posts.length === 0 && !source.startsWith('strike-')) {
-        try {
-            const project = await projectsCollection.findOne({ _id: new ObjectId(source) });
-            if (project && project.keyword) {
-                const manualTag = `strike-twitter-${project.keyword}`;
-                console.log(`[API] Trying manual tag: '${manualTag}'...`);
-                posts = await db.collection('posts').find({ source: manualTag }).sort({ timestamp: -1 }).toArray();
-            }
-        } catch(e) { }
+      try {
+        const project = await projectsCollection.findOne({ _id: new ObjectId(source) });
+        if (project && project.keyword) {
+          const manualTag = `strike-twitter-${project.keyword}`;
+          console.log(`[API] Trying manual tag: '${manualTag}'...`);
+          posts = await db.collection('posts').find({ source: manualTag }).sort({ timestamp: -1 }).toArray();
+        }
+      } catch (e) { }
     }
 
     console.log(`[API] Returning ${posts.length} posts.`);
+    posts = posts.map(p => ({
+      ...p,
+      url: p.sourceUrl || p.url,
+      username: p.author || p.username || 'Unknown'
+    }));
     res.json(posts);
 
   } catch (e) {
@@ -58,68 +63,6 @@ export const getPostsBySource = async (req, res) => {
   }
 };
 
-// export const createStrike = async (req, res) => {
-//   const { projectName, description, keyword, startDate, endDate } = req.body;
-//   const limit = 100;
-//   const sourceTag = `strike-twitter-${keyword}`;
-
-//   if (!keyword || !projectName) {
-//     return res.status(400).json({ error: "Project Name and Keyword required" });
-//   }
-
-//   try {
-//     const newProject = {
-//       name: projectName,
-//       description,
-//       keyword,
-//       startDate: startDate ? new Date(startDate) : null,
-//       endDate: endDate ? new Date(endDate) : null,
-//       status: "Running",
-//       postCount: 0,
-//       summary: null,
-//       createdAt: new Date(),
-//       type: "Manual",
-//       sourceTag
-//     };
-//     const savedProject = await projectsCollection.insertOne(newProject);
-
-//     res.status(200).json({ ...newProject, _id: savedProject.insertedId });
-
-//     const handleBatch = async (batchOfPosts) => {
-//         console.log(` Sending batch of ${batchOfPosts.length} to Python Queue...`);
-//         const queuePromises = batchOfPosts.map(post => {
-//             return addEnrichmentJob({ 
-//                 id: post.twitterPostId,  
-//                 content: post.content, 
-//                 platform: 'X (Twitter)',
-//                 sourceTag: sourceTag,
-//                 screenshotPath: post.screenshotPath 
-//             }); 
-//         });
-//         await Promise.allSettled(queuePromises);
-//     };
-
-// runTwitterScrapeJob(keyword, limit, startDate, endDate, sourceTag, handleBatch)
-//       .then(async (totalCount) => {
-//         console.log(`[Strike] Finished. Total Scraped: ${totalCount}`);
-//         await projectsCollection.updateOne(
-//           { _id: savedProject.insertedId },
-//           { $set: { status: "Completed", postCount: totalCount } }
-//         );
-//       })
-//       .catch(err => {
-//         console.error(`[Strike] Failed:`, err);
-//         projectsCollection.updateOne(
-//           { _id: savedProject.insertedId },
-//           { $set: { status: "Failed" } }
-//         );
-//       });
-
-//   } catch (error) {
-//     console.error("[Strike] Error:", error);
-//     if (!res.headersSent) res.status(500).json({ error: "Strike creation failed" });
-//   }
-// };
 
 export const createStrike = async (req, res) => {
   const { projectName, description, keyword, startDate, endDate } = req.body;
@@ -142,27 +85,28 @@ export const createStrike = async (req, res) => {
       summary: null,
       createdAt: new Date(),
       type: "Manual",
-      sourceTag
+      sourceTag,
+      platform: req.body.platform || 'twitter'
     };
     const savedProject = await projectsCollection.insertOne(newProject);
 
     res.status(200).json({ ...newProject, _id: savedProject.insertedId });
 
     const handleBatch = async (batchOfPosts) => {
-        console.log(` Sending batch of ${batchOfPosts.length} to Python Queue...`);
-        const queuePromises = batchOfPosts.map(post => {
-            return addEnrichmentJob({
-                id: post.twitterPostId,  
-                content: post.content,
-                platform: 'twitter',
-                sourceTag: sourceTag,
-                screenshotPath: post.screenshotPath
-            });
+      console.log(` Sending batch of ${batchOfPosts.length} to Python Queue...`);
+      const queuePromises = batchOfPosts.map(post => {
+        return addEnrichmentJob({
+          id: post.twitterPostId,
+          content: post.content,
+          platform: 'twitter',
+          sourceTag: sourceTag,
+          screenshotPath: post.screenshotPath
         });
-        await Promise.allSettled(queuePromises);
+      });
+      await Promise.allSettled(queuePromises);
     };
 
-    runUniversalScraper('twitter', keyword, limit, sourceTag, handleBatch)
+    runUniversalScraper(req.body.platform || 'twitter', keyword, limit, sourceTag, handleBatch)
       .then(async (totalCount) => {
         console.log(`[Strike] Finished. Total Scraped: ${totalCount}`);
         await projectsCollection.updateOne(
@@ -186,8 +130,8 @@ export const createStrike = async (req, res) => {
 
 // POST /api/projects/automated 
 export const createAutomatedProject = async (req, res) => {
-  const { projectName, keywords, sources } = req.body;
-  
+  const { projectName, keywords, sources, investigator, legalAuth, caseType } = req.body;
+
   if (!projectName || !keywords || !sources || sources.length === 0) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -199,26 +143,31 @@ export const createAutomatedProject = async (req, res) => {
       _id: new ObjectId(projectId),
       projectId: projectId,
       name: projectName,
-      keyword: keywords, 
-      status: "Running",
+      keyword: keywords,
+      status: "Running", // Scraper Status
+      caseStatus: "Open", // Forensic Case Status
+      investigator: investigator || "Unknown",
+      legalAuth: legalAuth || "OSINT", // Warrant / OSINT
+      caseType: caseType || "General",
       postCount: 0,
       summary: null,
       createdAt: new Date(),
       type: "Automated",
-      sources: sources
+      sources: sources,
+      evidenceHash: null // Will be updated on close/export
     };
 
     await projectsCollection.insertOne(newProject);
 
     const keywordsArray = typeof keywords === 'string' ? keywords.split(' OR ') : keywords;
-    
+
     for (const source of sources) {
-        if (source.status === 'Active') {
-            const platform = source.platformKey || source.id;
-            console.log(`[Controller] Launching harvester for ${platform}...`);
-            
-            startHarvester(projectId, projectName, keywordsArray, platform);
-        }
+      if (source.status === 'Active') {
+        const platform = source.platformKey || source.id;
+        console.log(`[Controller] Launching harvester for ${platform}...`);
+
+        startHarvester(projectId, projectName, keywordsArray, platform);
+      }
     }
 
     res.status(201).json(newProject);
@@ -229,46 +178,10 @@ export const createAutomatedProject = async (req, res) => {
   }
 };
 
-// export const createAutomatedProject = async (req, res) => {
-//   const { projectName, keywords, sources } = req.body;
-//   if (!projectName || !keywords || !sources || sources.length === 0) {
-//     return res.status(400).json({ error: "Missing required fields" });
-//   }
-
-//   const projectId = new ObjectId().toHexString();
-
-//   try {
-//     const newProject = {
-//       _id: new ObjectId(projectId),
-//       projectId: projectId,
-//       name: projectName,
-//       keyword: keywords, 
-//       status: "Running",
-//       postCount: 0,
-//       summary: null,
-//       createdAt: new Date(),
-//       type: "Automated",
-//       sources: sources
-//     };
-
-//     await projectsCollection.insertOne(newProject);
-
-//     const keywordsArray = typeof keywords === 'string' ? keywords.split(' OR ') : keywords;
-//     if (sources.some(s => s.id === 'x' && s.status === 'Active')) {
-//         startHarvester(projectId, projectName, keywordsArray);
-//     }
-
-//     res.status(201).json(newProject);
-
-//   } catch (error) {
-//     console.error("[Harvester] Failed to create project:", error);
-//     res.status(500).json({ error: "Failed to create project" });
-//   }
-// };
 
 export const analyzeProjectRisk = async (req, res) => {
   const { id } = req.params;
-  const MAX_BATCH_SIZE = 20; 
+  const MAX_BATCH_SIZE = 20;
 
   try {
     const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
@@ -320,58 +233,58 @@ function samplePosts(posts, maxSample) {
 }
 
 export const generateProjectSummary = async (req, res) => {
-    const { id } = req.params;
-    const SUMMARY_SAMPLE_SIZE = 50; 
-    const RISK_BATCH_SIZE = 100;
+  const { id } = req.params;
+  const SUMMARY_SAMPLE_SIZE = 50;
+  const RISK_BATCH_SIZE = 100;
 
-    try {
-        const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
-        if (!project) {
-            return res.status(404).json({ error: "Project not found" });
-        }
-
-        const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
-
-        let posts = await projectsCollection.db.collection('posts').find({
-            source: sourceIdentifier
-        }).toArray();
-
-        if (posts.length === 0) {
-            console.log(`[Summary] No posts for '${sourceIdentifier}'. Trying 'harvester-${sourceIdentifier}'...`);
-            posts = await projectsCollection.db.collection('posts').find({
-                source: `harvester-${sourceIdentifier}`
-            }).toArray();
-        }
-
-        if (posts.length === 0) {
-            posts = await projectsCollection.db.collection('posts').find({
-                source: `strike-twitter-${project.keyword}`
-            }).toArray();
-        }
-
-        if (posts.length === 0) {
-            return res.status(200).json({ summary: "No posts found in database. Scraper may still be running." });
-        }
-
-        let finalSummary = project.summary;
-        let allBulkOps = [];
-
-        const summaryPosts = samplePosts(posts, SUMMARY_SAMPLE_SIZE);
-        
-        const analysis = await runFullProjectAnalysis(project.keyword, summaryPosts, posts.length);
-        finalSummary = analysis.summary;
-
-        await projectsCollection.updateOne(
-            { _id: project._id },
-            { $set: { summary: finalSummary } }
-        );
-
-        res.status(200).json({ summary: finalSummary, postsUpdated: posts.length });
-
-    } catch (error) {
-        console.error("Summary Failed:", error);
-        res.status(500).json({ error: "Failed to generate summary" });
+  try {
+    const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
     }
+
+    const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
+
+    let posts = await projectsCollection.db.collection('posts').find({
+      source: sourceIdentifier
+    }).toArray();
+
+    if (posts.length === 0) {
+      console.log(`[Summary] No posts for '${sourceIdentifier}'. Trying 'harvester-${sourceIdentifier}'...`);
+      posts = await projectsCollection.db.collection('posts').find({
+        source: `harvester-${sourceIdentifier}`
+      }).toArray();
+    }
+
+    if (posts.length === 0) {
+      posts = await projectsCollection.db.collection('posts').find({
+        source: `strike-twitter-${project.keyword}`
+      }).toArray();
+    }
+
+    if (posts.length === 0) {
+      return res.status(200).json({ summary: "No posts found in database. Scraper may still be running." });
+    }
+
+    let finalSummary = project.summary;
+    let allBulkOps = [];
+
+    const summaryPosts = samplePosts(posts, SUMMARY_SAMPLE_SIZE);
+
+    const analysis = await runFullProjectAnalysis(project.keyword, summaryPosts, posts.length);
+    finalSummary = analysis.summary;
+
+    await projectsCollection.updateOne(
+      { _id: project._id },
+      { $set: { summary: finalSummary } }
+    );
+
+    res.status(200).json({ summary: finalSummary, postsUpdated: posts.length });
+
+  } catch (error) {
+    console.error("Summary Failed:", error);
+    res.status(500).json({ error: "Failed to generate summary" });
+  }
 };
 
 
@@ -385,11 +298,52 @@ export const getProjectsForDashboard = async (req, res) => {
     const manualProjects = allProjects.filter(p => p.type === 'Manual');
     const automatedProjects = allProjects.filter(p => p.type === 'Automated');
 
-    const totalPostsCount = await projectsCollection.db.collection('posts').countDocuments({}); 
+    const totalPostsCount = await projectsCollection.db.collection('posts').countDocuments({});
+
+    // FETCH RECENT POSTS
+    const recentPosts = await projectsCollection.db.collection('posts')
+      .find({})
+      .sort({ timestamp: -1 })
+      .limit(20)
+      .toArray();
+
+    // FETCH THREAT STATS (AGGREGATION)
+    const riskAggregation = await projectsCollection.db.collection('posts').aggregate([
+      { $match: { risk: { $exists: true, $ne: null } } },
+      { $group: { _id: "$risk", count: { $sum: 1 } } }
+    ]).toArray();
+
+    const riskStats = riskAggregation.map(r => ({ name: r._id, value: r.count }));
+
+    // FETCH ACTIVITY STATS
+    const activityStats = await projectsCollection.db.collection('posts').aggregate([
+      {
+        $project: {
+          dateStr: { $substr: ["$timestamp", 0, 10] }
+        }
+      },
+      {
+        $group: {
+          _id: "$dateStr",
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 14 }
+    ]).toArray();
+
     res.json({
       manual: manualProjects,
       automated: automatedProjects,
-      totalPosts: totalPostsCount
+      totalPosts: totalPostsCount,
+      recentPosts: recentPosts.map(p => ({
+        ...p,
+        id: p._id,
+        date: p.timestamp,
+        formattedDate: new Date(p.timestamp).toLocaleString()
+      })),
+      riskStats: riskStats.length > 0 ? riskStats : [{ name: 'Low', value: 1 }],
+      activityStats: activityStats.map(a => ({ date: a._id, count: a.count }))
     });
   } catch (e) {
     console.error("Error fetching projects for dashboard:", e);
@@ -411,17 +365,18 @@ export const updateProjectSources = async (req, res) => {
     if (result.matchedCount === 0) return res.status(404).json({ error: "Project not found" });
 
     const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
-    const twitterSource = sources.find(s => s.id === 'x');
 
-    if (twitterSource && project) {
-      if (twitterSource.status === 'Stopped') {
-        console.log(`[API] Stopping Harvester for ${project.projectId}`);
- 
-        await stopHarvester(project.projectId); 
-      } else if (twitterSource.status === 'Active') {
-        console.log(`[API] Starting Harvester for ${project.projectId}`);
-        const keywordsArray = typeof project.keyword === 'string' ? project.keyword.split(' OR ') : project.keyword;
-        await startHarvester(project.projectId, project.name, keywordsArray);
+    if (project) {
+      for (const source of sources) {
+        const platform = source.platformKey || source.id;
+        if (source.status === 'Active') {
+          console.log(`[API] Starting Harvester for ${project.projectId} on ${platform}`);
+          const keywordsArray = typeof project.keyword === 'string' ? project.keyword.split(' OR ') : project.keyword;
+          await startHarvester(project.projectId, project.name, keywordsArray, platform);
+        } else if (source.status === 'Stopped') {
+          console.log(`[API] Stopping Harvester for ${project.projectId} on ${platform}`);
+          await stopHarvester(project.projectId, platform);
+        }
       }
     }
 

@@ -3,6 +3,9 @@ node server.js
 npm run dev
 
 
+<!-- to create new user -->
+node create-investigator.js "Detective Name" "detective@police.gov.in"
+
 redis-server
 python enrichment_worker.py  # BullMQ worker
 python enrichment_runner.py        # RQ worker  
@@ -47,3 +50,5 @@ node create-session.js
       "upis": ["scam@ybl"]
   }
 }
+
+

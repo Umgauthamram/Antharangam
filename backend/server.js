@@ -1,8 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
-import mainApiRouter from './routes/mainRoutes.js'; 
-import { startScheduler } from './services/jobScheduler.js'; 
+import mainApiRouter from './routes/mainRoutes.js';
+import { startScheduler } from './services/jobScheduler.js';
+import { startWorker } from './services/enrichmentWorker.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,5 +25,6 @@ app.get('/', (req, res) => {
 
 app.listen(port, () => {
   console.log(`Antharangam backend running on http://localhost:${port}`);
-  startScheduler(); 
+  startScheduler();
+  startWorker(); // Consumer for Risk/Intel analysis
 });

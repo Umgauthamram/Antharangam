@@ -88,7 +88,7 @@
 //     let jsonText = result.text; 
 //         if (!jsonText) {
 //             jsonText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-            
+
 //             if (!jsonText) {
 //                 console.error("[AI Service] Empty text detected. Full API result:", JSON.stringify(result, null, 2));
 //                 throw new Error("AI returned an empty or invalid response structure.");
@@ -180,14 +180,43 @@ export const analyzeRiskBatch = async (posts) => {
     }));
 };
 
+
+function generateVerboseReport(keyword, totalCount, highRiskCount, topKeywords, topEntities, allPhones, allUPIs, threatLevel) {
+    const riskPercentage = ((highRiskCount / totalCount) * 100).toFixed(1);
+    const hasEntities = topEntities.length > 0;
+    const hasContacts = allPhones.size > 0 || allUPIs.size > 0;
+
+    let narrative = `
+        <p style="margin-bottom: 12px; color: #cbd5e1;">
+            This intelligence assessment is based on a comprehensive automated scan of <strong>${totalCount} social media signals</strong> related to the query <em>"${keyword}"</em>. 
+            The system successfully ingested and processed these items to identify potential security threats, fraudulent activities, and high-risk indicators.
+            Current analysis indicates a threat level of <strong>${threatLevel}</strong>, with <strong>${riskPercentage}%</strong> of the analyzed content flagged as High Risk.
+        </p>
+        <p style="margin-bottom: 12px; color: #cbd5e1;">
+            Detailed inspection of the content reveals a coordinated pattern of activity. 
+            The most dominant themes discovered in the dataset include ${topKeywords ? topKeywords : "generic discussions"}, suggesting that these are the primary vectors being utilized or discussed. 
+            ${highRiskCount > 0 ? `Specifically, the system isolated <strong>${highRiskCount} critical items</strong> that exhibited strong indicators of malicious intent, scam keywords, or direct financial solicitation.` : "No critical high-risk vectors were isolated in this specific batch, indicating primarily informational or low-risk chatter."}
+        </p>
+        <p style="margin-bottom: 12px; color: #cbd5e1;">
+            Forensic extraction algorithms ${hasEntities || hasContacts ? "were successful in identifying specific actionable intelligence." : "did not identify specific entities in this pass."}
+            ${hasEntities ? `Key named entities appearing frequently in the context of these posts include <strong>${topEntities}</strong>, which may represent associated organizations, individuals, or alias accounts.` : ""}
+            ${hasContacts ? `Furthermore, the system extracted <strong>${allPhones.size} unique phone numbers</strong> and <strong>${allUPIs.size} UPI IDs</strong> from the content. These identifiers are high-value targets for cross-referencing against known fraud databases.` : "No direct financial identifiers (Phone/UPI) were openly broadcast in this sample."}
+        </p>
+        <p style="color: #cbd5e1;">
+            In conclusion, the presence of ${threatLevel === 'CRITICAL' ? "widespread high-risk signals" : (threatLevel === 'MEDIUM' ? "moderate risk indicators" : "low-risk content")} warrants ${threatLevel === 'CRITICAL' ? "immediate intervention and forensic preservation of evidence." : "continued monitoring to detect any escalation in threat velocity."}
+            Analysts are advised to review the itemized breakdown below for specific attribution.
+        </p>
+    `;
+    return narrative;
+}
+
 export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
     console.log(`[LocalAI] Generating statistical summary for ${posts.length} posts...`);
 
     try {
         let highRiskCount = 0;
         let mediumRiskCount = 0;
-        let lowRiskCount = 0;
-        
+
         const allKeywords = {};
         const allEntities = {};
         const allPhones = new Set();
@@ -196,10 +225,9 @@ export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
         posts.forEach(post => {
             if (post.risk === 'High') highRiskCount++;
             else if (post.risk === 'Medium') mediumRiskCount++;
-            else lowRiskCount++;
 
             const intel = post.enrichmentData || {};
-            
+
             (intel.risk_flags || []).forEach(flag => {
                 const cleanFlag = flag.replace('Keyword: ', '').replace('Phone Detected', '').replace('UPI Detected', '').trim();
                 if (cleanFlag && !cleanFlag.startsWith('Source:')) {
@@ -215,50 +243,87 @@ export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
             (intel.extracted_upis || []).forEach(u => allUPIs.add(u));
         });
 
-        const topKeywords = Object.entries(allKeywords)
-            .sort((a, b) => b[1] - a[1]) 
-            .slice(0, 5)
-            .map(k => `<b>${k[0]}</b> (${k[1]})`)
-            .join(', ');
+        const topKeywordsArray = Object.entries(allKeywords).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const topKeywords = topKeywordsArray.map(k => `<b>${k[0]}</b>`).join(', ');
 
-        const topEntities = Object.entries(allEntities)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(e => e[0])
-            .join(', ');
+        const topEntitiesArray = Object.entries(allEntities).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const topEntities = topEntitiesArray.map(e => e[0]).join(', ');
 
         const highRiskPercent = totalCount > 0 ? (highRiskCount / totalCount) * 100 : 0;
         let threatLevel = "LOW";
-        let threatColor = "green";
-        
-        if (highRiskPercent > 10) { threatLevel = "MEDIUM"; threatColor = "#d97706"; } 
-        if (highRiskPercent > 30) { threatLevel = "CRITICAL"; threatColor = "#dc2626"; } 
-        const summaryHTML = `
-            <div style="font-family: sans-serif; font-size: 14px;">
-                <p style="margin-bottom: 8px;"><strong> Threat Level: <span style="color:${threatColor}">${threatLevel}</span></strong></p>
-                <p style="margin-bottom: 12px;">
-                    Scan completed on <strong>${totalCount} posts</strong> relating to "<em>${keyword}</em>".
-                    System identified <strong>${highRiskCount} High Risk</strong> items requiring immediate attention.
-                </p>
-                
-                <p style="margin-bottom: 4px;"><strong> Key Patterns Detected:</strong></p>
-                <ul style="margin-top: 0;">
-                    <li><strong>Common Themes:</strong> ${topKeywords || "None detected"}</li>
-                    <li><strong>Key Entities Mentioned:</strong> ${topEntities || "None detected"}</li>
-                    <li><strong>Suspect Contacts:</strong> Found ${allPhones.size} unique phone numbers and ${allUPIs.size} UPI IDs.</li>
-                </ul>
+        let threatColor = "#4ade80"; // Bright Green
+        let panelBg = "rgba(74, 222, 128, 0.1)"; // Green tint
+        let panelBorder = "rgba(74, 222, 128, 0.2)";
 
-                <p style="margin-top: 12px;"><strong> Recommendation:</strong>
-                ${threatLevel === "CRITICAL" 
-                    ? "Significant scam activity detected. Generate Forensic Report immediately for law enforcement action." 
-                    : "Monitor specific high-risk users. Review extracted evidence in the log below."}
-                </p>
+        if (highRiskPercent > 10) {
+            threatLevel = "MEDIUM";
+            threatColor = "#fbbf24"; // Amber 400
+            panelBg = "rgba(251, 191, 36, 0.1)";
+            panelBorder = "rgba(251, 191, 36, 0.2)";
+        }
+        if (highRiskPercent > 30) {
+            threatLevel = "CRITICAL";
+            threatColor = "#f87171"; // Red 400
+            panelBg = "rgba(248, 113, 113, 0.1)";
+            panelBorder = "rgba(248, 113, 113, 0.2)";
+        }
+
+        const verboseReport = generateVerboseReport(keyword, totalCount, highRiskCount, topKeywords, topEntities, allPhones, allUPIs, threatLevel);
+
+        const summaryHTML = `
+            <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: #e2e8f0; line-height: 1.6;">
+                <div style="background-color: ${panelBg}; padding: 16px; border-radius: 8px; border: 1px solid ${panelBorder}; margin-bottom: 24px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">🛡️</span>
+                        <div>
+                            <p style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: ${threatColor}; font-weight: bold;">Threat Intelligence Report</p>
+                            <p style="margin: 0; font-size: 18px; font-weight: 700; color: #f8fafc;">Threat Level: <span style="color:${threatColor};">${threatLevel}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 24px; color: #cbd5e1;">
+                    ${verboseReport}
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                     <div style="background: rgba(30, 41, 59, 0.5); padding: 12px; border-radius: 6px; border: 1px solid #334155;">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: bold;">Common Keywords</span>
+                        <p style="margin-top: 4px; color: #f1f5f9; font-size: 13px;">${topKeywords || "None"}</p>
+                     </div>
+                     <div style="background: rgba(30, 41, 59, 0.5); padding: 12px; border-radius: 6px; border: 1px solid #334155;">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: bold;">Entities Identified</span>
+                        <p style="margin-top: 4px; color: #f1f5f9; font-size: 13px;">${topEntities || "None"}</p>
+                     </div>
+                </div>
+
+                ${highRiskCount > 0 ? `
+                <h4 style="border-bottom: 1px solid #334155; padding-bottom: 8px; margin-top: 32px; color: #f87171; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                    🚨 Critical Threat Breakdown (${highRiskCount} Items)
+                </h4>
+                <div style="margin-top: 16px;">
+                    ${posts.filter(p => p.risk === 'High').map(p => `
+                        <div style="background-color: rgba(248, 113, 113, 0.05); border-left: 3px solid #f87171; padding: 12px 16px; margin-bottom: 12px; border-radius: 0 4px 4px 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <span style="font-weight: bold; color: #f1f5f9;">@${p.username} <span style="font-weight: normal; color: #94a3b8; font-size: 12px;">(${p.platform?.toUpperCase()})</span></span>
+                                <span style="font-size: 12px; color: #64748b;">${new Date(p.timestamp).toLocaleDateString()}</span>
+                            </div>
+                            <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-style: italic; font-family: 'Georgia', serif;">"${p.content.length > 200 ? p.content.substring(0, 200) + '...' : p.content}"</p>
+                            ${(p.enrichmentData?.extracted_phones?.length > 0 || p.enrichmentData?.extracted_upis?.length > 0) ? `
+                                <div style="margin-top: 8px; font-size: 11px; background-color: rgba(15, 23, 42, 0.5); padding: 4px 8px; border-radius: 4px; display: inline-block; color: #f8fafc; border: 1px solid #334155;">
+                                    <strong>Extracted:</strong> ${[... (p.enrichmentData.extracted_phones || []), ... (p.enrichmentData.extracted_upis || [])].join(', ')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
             </div>
         `;
 
         return {
             summary: summaryHTML,
-            riskResults: posts 
+            riskResults: posts
         };
 
     } catch (error) {
