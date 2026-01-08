@@ -1,17 +1,20 @@
+# Node
+node_modules/
+
 # Python
 venv/
-.env
 __pycache__/
 *.pyc
 
 # Playwright / Chromium
-backend/chromium_user_data/
+chromium_user_data/
 **/Cache/
 **/Cache_Data/
 
-# Node
-node_modules/
+# Build outputs
+dist/
+build/
+.next/
 
-# OS
-.DS_Store
-Thumbs.db
+# Env
+.env

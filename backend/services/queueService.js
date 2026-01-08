@@ -23,7 +23,7 @@ export const addEnrichmentJob = async (postData) => {
     }
 
     const jobPayload = {
-        id: postId,  
+        id: postId,
         content: postData.content,
         rawhtmlpath: postData.rawhtmlpath || null,
         screenshotpath: postData.screenshotpath || null,

@@ -57,20 +57,20 @@ export default function CaseTable({ cases, onView }) {
             {/* --- CHANGED: Using real data fields --- */}
             {cases.map((caseItem) => (
               <tr key={caseItem._id} className="hover:bg-primary">
-                
+
                 <td className="px-6 py-4">
                   <div className="text-sm text-primary font-semibold truncate max-w-xs">{caseItem.name}</div>
                   <div className="text-xs text-secondary truncate max-w-xs">{caseItem.description}</div>
                 </td>
-                
+
                 <td className="px-6 py-4">
                   <div className="text-sm text-secondary truncate max-w-xs">{caseItem.keyword}</div>
                 </td>
-                
+
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
                   <span className={getStatusClass(caseItem.status)}>{caseItem.status}</span>
                 </td>
-                
+
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityClass(caseItem.type)}`}>
                     {caseItem.type}
@@ -78,15 +78,15 @@ export default function CaseTable({ cases, onView }) {
                 </td>
 
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">{caseItem.postCount || 0}</td>
-                
+
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary">
                   {new Date(caseItem.createdAt).toLocaleDateString()}
                 </td>
-                
+
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   {/* --- CHANGED: 'onView' prop is now used --- */}
-                  <button 
-                    onClick={() => onView(caseItem)} 
+                  <button
+                    onClick={() => onView(caseItem)}
                     className="text-peacock-500 hover:text-peacock-700 p-1"
                     title="View Analysis"
                   >

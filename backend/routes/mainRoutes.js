@@ -4,8 +4,11 @@ import harvesterRoutes from './harvesterRoutes.js';
 import alertRoutes from './alertRoutes.js';
 import { getPostsBySource } from '../controllers/projectController.js';
 import injestRoutes from './ingestionRoutes.js';
+import authRoutes from './authRoutes.js';
 
 const router = express.Router();
+
+router.use('/auth', authRoutes);
 
 router.use('/projects', projectRoutes);        // GET /api/projects
 

@@ -1,139 +1,18 @@
-// import { runTwitterScrapeJob, closeActiveBrowser } from './harvester.js';
-// import { projects as projectsCollection } from './db.js';
-// import { addEnrichmentJob } from './queueService.js';
-// import { runUniversalScraper } from './harvester.js';
 
-// const activeJobs = new Map();
-// const DEFAULT_INTERVAL = 10 * 60 * 1000; 
-
-// let isBrowserBusy = false;
-
-// const executeScrapeAndEnrich = async (id, query, sourceTag) => {
-//     if (isBrowserBusy) {
-//         console.log(`[HarvesterManager] SKIPPING job for '${id}' - Browser is currently busy.`);
-//         return; 
-//     }
-//     console.log(`[HarvesterManager] Starting scrape job for '${id}'...`);
-    
-//     isBrowserBusy = true;
-    
-//     try {
-//         const handleBatch = async (postsBatch) => {
-//             console.log(`[HarvesterManager] ⚡ Sending batch of ${postsBatch.length} posts to Queue...`);
-            
-//             const queuePromises = postsBatch.map(post => {
-//                 return addEnrichmentJob({
-//                     id: post.twitterPostId,
-//                     content: post.content,
-//                     platform: 'X (Twitter)',
-//                     source: sourceTag
-//                 });
-//             });
-//             await Promise.allSettled(queuePromises);
-
-//             await projectsCollection.updateOne(
-//                 { projectId: id }, 
-//                 { $inc: { postCount: postsBatch.length } } 
-//             );
-//         };
-
-//         // await runTwitterScrapeJob(query, 100, null, null, sourceTag, handleBatch); 
-
-//         await runUniversalScraper(platform, query, 100, sourceTag, handleBatch);
-
-//     } catch (error) {
-//         console.error(`[HarvesterManager] Error executing scrape for '${id}':`, error);
-//     } finally {
-//         isBrowserBusy = false; 
-//         console.log(`[HarvesterManager] Browser released.`);
-//     }
-// };
-
-// export async function startHarvester(id, name, keywords) {
-//     if (activeJobs.has(id)) {
-//         console.log(`[HarvesterManager] Job for '${id}' is already running.`);
-//         return; 
-//     }
-
-//     const query = Array.isArray(keywords) ? keywords.join(' OR ') : keywords;
-//     const sourceTag = `harvester-${id}`; 
-
-//     console.log(`[HarvesterManager] Starting NEW job interval for: ${name}`);
-
-//     await projectsCollection.updateOne(
-//         { projectId: id }, 
-//         { $set: { status: "Running", keyword: query, platform: platform } },
-//         { upsert: true }
-//     );
-    
-//     executeScrapeAndEnrich(id, query, sourceTag, platform);
-
-//     const job = () => executeScrapeAndEnrich(id, query, sourceTag, platform);
-//     const intervalId = setInterval(job, DEFAULT_INTERVAL);
-
-//     activeJobs.set(id, intervalId);
-// }
-
-// export async function stopHarvester(id) {
-//     if (activeJobs.has(id)) {
-//         const intervalId = activeJobs.get(id);
-//         clearInterval(intervalId); 
-//         activeJobs.delete(id);
-//         console.log(`[HarvesterManager] Stopped schedule for '${id}'.`);
-//     }
-
-//     if (isBrowserBusy) {
-//         console.log(`[HarvesterManager] Force-closing active browser for stop request...`);
-//         await closeActiveBrowser();
-//         isBrowserBusy = false;
-//     }
-
-//     try {
-//         await projectsCollection.updateOne(
-//             { projectId: id },
-//             { $set: { status: "Stopped", endDate: new Date() } }
-//         );
-//     } catch (dbError) {
-//         console.error(`[HarvesterManager] Failed to update DB status:`, dbError);
-//     }
-// }
-
-// export async function initializeHarvesters() {
-//     console.log('[HarvesterManager] Initializing active harvesters...');
-//     const activeProjects = await projectsCollection.find({ type: "Automated", status: "Running" }).toArray();
-    
-//     for (const project of activeProjects) {
-//         const keywordsArray = typeof project.keyword === 'string' ? project.keyword.split(' OR ') : project.keyword;
-//         if (project.sources?.some(s => s.id === 'x' && s.status === 'Active')) {
-//              startHarvester(project.projectId, project.name, keywordsArray); 
-//         }
-//         await new Promise(r => setTimeout(r, 2000)); 
-//     }
-//     console.log(`[HarvesterManager] Initialization complete.`);
-// }
-
-import { runUniversalScraper } from './harvester.js';
+import { runUniversalScraper, closeActiveBrowser } from './harvester.js';
 import { projects as projectsCollection } from './db.js';
 import { addEnrichmentJob } from './queueService.js';
 
 const activeJobs = new Map();
 const DEFAULT_INTERVAL = 10 * 60 * 1000;
 
-let isBrowserBusy = false;
-
-const executeScrapeAndEnrich = async (id, query, sourceTag, platform = 'twitter') => {
-    if (isBrowserBusy) {
-        console.log(`[HarvesterManager] SKIPPING job for '${id}' - Browser is currently busy.`);
-        return;
-    }
+const executeScrapeAndEnrich = async (id, query, sourceTag, platform = 'twitter', abortSignal) => {
     console.log(`[HarvesterManager] Starting scrape job for '${id}'...`);
-    
-    isBrowserBusy = true;
-    
+
     try {
         const handleBatch = async (postsBatch) => {
-            console.log(`[HarvesterManager] ⚡ Sending batch of ${postsBatch.length} posts to Queue...`);
-            
+            console.log(`[HarvesterManager] ⚡ Sending batch of ${postsBatch.length} posts...`);
+
             const queuePromises = postsBatch.map(post => {
                 return addEnrichmentJob({
                     id: post.twitterPostId,
@@ -146,118 +25,119 @@ const executeScrapeAndEnrich = async (id, query, sourceTag, platform = 'twitter'
             await Promise.allSettled(queuePromises);
 
             await projectsCollection.updateOne(
-                { projectId: id }, 
-                { $inc: { postCount: postsBatch.length } } 
+                { projectId: id },
+                { $inc: { postCount: postsBatch.length } }
             );
         };
 
-        await runUniversalScraper(platform, query, 100, sourceTag, handleBatch);
+        await runUniversalScraper(platform, query, 100, sourceTag, handleBatch, abortSignal);
 
     } catch (error) {
         console.error(`[HarvesterManager] Error executing scrape for '${id}':`, error);
-    } finally {
-        isBrowserBusy = false;
-        console.log(`[HarvesterManager] Browser released.`);
     }
 };
 
 export async function startHarvester(id, name, keywords, platform = 'twitter') {
     const jobKey = `${id}-${platform}`;
 
-    // if (activeJobs.has(id)) {
-    //     console.log(`[HarvesterManager] Job for '${id}' is already running.`);
-    //     return;
-    // }
 
     if (activeJobs.has(jobKey)) {
         console.log(`[HarvesterManager] Job '${jobKey}' is already running.`);
-        return; 
+        return;
     }
 
     const query = Array.isArray(keywords) ? keywords.join(' OR ') : keywords;
-    const sourceTag = `harvester-${id}`; 
+    const sourceTag = `harvester-${id}`;
 
     console.log(`[HarvesterManager] Starting NEW job interval for: ${name} on ${platform}`);
-    
-   await projectsCollection.updateOne(
-        { projectId: id }, 
-        { $set: { status: "Running", keyword: query } }, 
+
+    await projectsCollection.updateOne(
+        { projectId: id },
+        { $set: { status: "Running", keyword: query } },
         { upsert: true }
     );
-    
-    executeScrapeAndEnrich(id, query, sourceTag, platform);
 
-    const job = () => executeScrapeAndEnrich(id, query, sourceTag, platform);
+    const controller = new AbortController();
+
+    const job = () => executeScrapeAndEnrich(id, query, sourceTag, platform, controller.signal);
+
+    // Run immediately
+    executeScrapeAndEnrich(id, query, sourceTag, platform, controller.signal);
+
     const intervalId = setInterval(job, DEFAULT_INTERVAL);
 
-    activeJobs.set(id, intervalId);
+    activeJobs.set(jobKey, { intervalId, controller });
 }
 
-export async function stopHarvester(id) {
+export async function stopHarvester(id, platform = null) {
     let stoppedCount = 0;
 
-    for (const [key, intervalId] of activeJobs.entries()) {
-        if (key.startsWith(`${id}-`)) {
+    if (platform) {
+        // Stop specific platform
+        const jobKey = `${id}-${platform}`;
+        if (activeJobs.has(jobKey)) {
+            const { intervalId, controller } = activeJobs.get(jobKey);
             clearInterval(intervalId);
-            activeJobs.delete(key);
+            controller.abort(); // Signal cancellation to running scraper
+            activeJobs.delete(jobKey);
+            console.log(`[HarvesterManager] Stopped schedule for '${jobKey}'.`);
             stoppedCount++;
         }
-    }
-    if (stoppedCount > 0) {
-        console.log(`[HarvesterManager] Stopped ${stoppedCount} schedules for '${id}'.`);
     } else {
-        console.log(`[HarvesterManager] No active schedules found for '${id}'.`);
+        // Stop ALL for this project
+        for (const [key, { intervalId, controller }] of activeJobs.entries()) {
+            if (key.startsWith(`${id}-`)) {
+                clearInterval(intervalId);
+                controller.abort(); // Signal cancellation
+                activeJobs.delete(key);
+                stoppedCount++;
+            }
+        }
+        console.log(`[HarvesterManager] Stopped ${stoppedCount} schedules for '${id}' (ALL).`);
     }
 
-    if (isBrowserBusy) {
-        console.log(`[HarvesterManager] Force-closing active browser for stop request...`);
-        await closeActiveBrowser();
-        isBrowserBusy = false;
+    if (stoppedCount === 0) {
+        console.log(`[HarvesterManager] No active schedules found to stop for '${id}' ${platform ? `(${platform})` : ''}.`);
     }
 
-    try {
-        await projectsCollection.updateOne(
-            { projectId: id },
-            { $set: { status: "Stopped", endDate: new Date() } }
-        );
-    } catch (dbError) {
-        console.error(`[HarvesterManager] Failed to update DB status:`, dbError);
+
+    // Close active browser calls are now handled internally by runUniversalScraper per job.
+    // We rely on the job finishing naturally or the interval being cleared preventing new runs.
+
+    let remainingJobs = 0;
+    for (const key of activeJobs.keys()) {
+        if (key.startsWith(`${id}-`)) remainingJobs++;
+    }
+
+    if (remainingJobs === 0) {
+        try {
+            await projectsCollection.updateOne(
+                { projectId: id },
+                { $set: { status: "Stopped", endDate: new Date() } }
+            );
+        } catch (dbError) {
+            console.error(`[HarvesterManager] Failed to update DB status:`, dbError);
+        }
     }
 }
-
-//     if (activeJobs.has(id)) {
-//         const intervalId = activeJobs.get(id);
-//         clearInterval(intervalId);
-//         activeJobs.delete(id);
-//         console.log(`[HarvesterManager] Stopped schedule for '${id}'.`);
-//     }
-
-//     if (isBrowserBusy) {
-//         console.log(`[HarvesterManager] Force-closing active browser for stop request...`);
-//         await closeActiveBrowser();
-//         isBrowserBusy = false;
-//     }
-
-//     try {
-//         await projectsCollection.updateOne(
-//             { projectId: id },
-//             { $set: { status: "Stopped", endDate: new Date() } }
-//         );
-//     } catch (dbError) {
-//         console.error(`[HarvesterManager] Failed to update DB status:`, dbError);
-//     }    
-// }
-
 export async function initializeHarvesters() {
     console.log('[HarvesterManager] Initializing active harvesters...');
     const activeProjects = await projectsCollection.find({ type: "Automated", status: "Running" }).toArray();
-    
+
     for (const project of activeProjects) {
-        const keywordsArray = typeof project.keyword === 'string' ? project.keyword.split(' OR ') : project.keyword;
-        if (project.sources?.some(s => s.id === 'x' && s.status === 'Active')) {
-             startHarvester(project.projectId, project.name, keywordsArray, 'twitter'); 
+        if (project.sources && Array.isArray(project.sources)) {
+            const keywordsArray = typeof project.keyword === 'string' ? project.keyword.split(' OR ') : project.keyword;
+
+            for (const source of project.sources) {
+                if (source.status === 'Active') {
+                    const platform = source.platformKey || source.id;
+                    console.log(`[HarvesterInit] Starting ${platform} for ${project.name}`);
+                    startHarvester(project.projectId, project.name, keywordsArray, platform);
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            }
         }
-        await new Promise(r => setTimeout(r, 2000)); 
+        await new Promise(r => setTimeout(r, 1000));
     }
     console.log(`[HarvesterManager] Initialization complete.`);
 }
