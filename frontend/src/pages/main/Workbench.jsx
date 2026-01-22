@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
-    Calendar, Zap, Send, Facebook, Instagram, Power, Linkedin, MessageCircle, X, Search, Loader2, ArrowLeft,  Globe , Eye, Activity, Bot, FileText, Plus, ExternalLink
+    Calendar, Zap, Send, Facebook, Instagram, Power, Linkedin, MessageCircle, X, Search, Loader2, ArrowLeft, Globe, Eye, Activity, Bot, FileText, Plus, ExternalLink, Filter, AlertTriangle, Image as ImageIcon, Flag
 } from 'lucide-react';
 import { useDarkMode } from '../../hooks/useDarkMode';
+import { motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import "../../components/ui/datepicker.css";
 import { useLocation } from 'react-router-dom';
@@ -11,12 +12,12 @@ import { generateCaseReport } from '../../utils/reportGenerator';
 
 
 const ALL_POSSIBLE_SOURCES = [
-    { id: 'x', name: 'X (Twitter)', icon: X, enabled: true },
-    { id: 'reddit', name: 'Reddit', icon: MessageCircle, enabled: true },
-    { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true },
-    { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: true },
-    { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, enabled: true },
-    { id: 'telegram', name: 'Telegram', icon: Send, enabled: true },
+    { id: 'x', name: 'X (Twitter)', icon: X, enabled: true, color: 'text-zinc-900 dark:text-zinc-100', bg: 'bg-zinc-900', ring: 'ring-zinc-900' },
+    { id: 'reddit', name: 'Reddit', icon: MessageCircle, enabled: true, color: 'text-orange-600', bg: 'bg-orange-600', ring: 'ring-orange-600' },
+    { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true, color: 'text-blue-600', bg: 'bg-blue-600', ring: 'ring-blue-600' },
+    { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: true, color: 'text-pink-600', bg: 'bg-pink-600', ring: 'ring-pink-600' },
+    { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, enabled: true, color: 'text-blue-700', bg: 'bg-blue-700', ring: 'ring-blue-700' },
+    { id: 'telegram', name: 'Telegram', icon: Send, enabled: true, color: 'text-sky-500', bg: 'bg-sky-500', ring: 'ring-sky-500' },
 ];
 
 // function OCRViewer({ text }) {
@@ -276,7 +277,7 @@ export default function Workbench() {
             if (!response.ok) throw new Error('Failed to fetch projects');
             const data = await response.json();
             setProjects(data);
-            
+
             if (currentProject) {
                 const updated = data.find(p => p.projectId === currentProject.projectId);
                 if (updated) setCurrentProject(updated);
@@ -301,7 +302,27 @@ export default function Workbench() {
                         project={currentProject}
                         initialData={analysisResults}
                         onBack={handleBackToList}
-                        onRefreshData={() => handleViewAnalysis(currentProject)}
+                        onRefreshData={async () => {
+                            try {
+                                const sourceIdentifier = currentProject.type === 'Automated' ? currentProject.projectId : currentProject.sourceTag;
+                                const response = await fetch(`http://localhost:5001/api/posts/by_source?source=${encodeURIComponent(sourceIdentifier)}`);
+                                if (!response.ok) throw new Error('Failed');
+                                const posts = await response.json();
+                                const formattedResults = posts.map(post => ({
+                                    ...post,
+                                    timestamp: new Date(post.timestamp).toLocaleString(),
+                                    id: post._id
+                                }));
+
+                                // Update state directly 
+                                setAnalysisResults(prev => ({
+                                    ...prev,
+                                    posts: formattedResults
+                                }));
+                                // Also refresh project list for summary updates
+                                handleProjectRefresh();
+                            } catch (e) { console.error("Refresh failed", e); }
+                        }}
                         onProjectUpdate={handleProjectRefresh}
                     />
                 );
@@ -332,9 +353,9 @@ export default function Workbench() {
                     <div className="flex items-center justify-between">
                         <div><h1 className="text-3xl font-bold mb-1 text-primary">Case Management</h1></div>
                         <div className="flex gap-4">
-                             <button onClick={() => setIsHarvesterModalOpen(true)} className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none">
+                            <button onClick={() => setIsHarvesterModalOpen(true)} className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none">
                                 <Plus className="w-5 h-5 mr-1" /> New Case
-                             </button>
+                            </button>
                         </div>
                     </div>
                     {/* Tab Selection Removed - showing only Automated Projects */}
@@ -475,11 +496,11 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
 
         const sources = ALL_POSSIBLE_SOURCES
             .filter(s => selectedSources.has(s.id))
-            .map(s => ({ 
-                id: s.id, 
-                name: s.name, 
+            .map(s => ({
+                id: s.id,
+                name: s.name,
                 status: 'Active',
-                platformKey: s.id === 'x' ? 'twitter' : s.id 
+                platformKey: s.id === 'x' ? 'twitter' : s.id
             }));
 
         onCreate({ projectName, keywords, sources, investigator, legalAuth, caseType });
@@ -491,13 +512,13 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
     const textLabel = isDarkMode ? 'text-zinc-400' : 'text-zinc-500';
     const bgInput = isDarkMode ? 'bg-zinc-900/50' : 'bg-gray-50';
     const focusRing = 'focus:ring-2 focus:ring-peacock-500 focus:outline-none';
-    const inputClasses = `w-full p-3 rounded-lg text-sm font-medium transition-all ${bgInput} ${textPrimary} ${focusRing} border-none`; 
+    const inputClasses = `w-full p-3 rounded-lg text-sm font-medium transition-all ${bgInput} ${textPrimary} ${focusRing} border-none`;
     const closeButtonClasses = isDarkMode ? 'text-zinc-500 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-black hover:bg-black/5';
 
     return (
         <div className={`fixed inset-0 z-50 flex items-center justify-center transition-opacity backdrop-blur-md ${isDarkMode ? 'bg-black/60' : 'bg-gray-900/20'}`}>
             <div className={`rounded-2xl shadow-2xl w-full max-w-4xl ${bgModal} overflow-hidden flex flex-col max-h-[90vh]`}>
-                
+
                 {/* Header */}
                 <div className="flex justify-between items-center px-8 py-6">
                     <div>
@@ -512,14 +533,14 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
                 {/* Content Grid */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-8 pb-8">
                     <div className="grid grid-cols-12 gap-8">
-                        
+
                         {/* LEFT COLUMN: Case Details & Keywords (7 cols) */}
                         <div className="col-span-12 md:col-span-7 space-y-6">
-                            
+
                             {/* Section: Case Meta */}
                             <div className="space-y-4">
                                 <h4 className={`text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-peacock-400' : 'text-peacock-600'}`}>Case Metadata</h4>
-                                
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="col-span-2">
                                         <label htmlFor="projectName" className={`block text-xs font-semibold uppercase mb-2 ${textLabel}`}>Case Name / ID</label>
@@ -561,7 +582,7 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
                         <div className="col-span-12 md:col-span-5">
                             <div className={`h-full rounded-2xl p-6 ${isDarkMode ? 'bg-zinc-900/30' : 'bg-gray-50/80'}`}>
                                 <h4 className={`text-xs font-bold uppercase tracking-widest mb-6 ${isDarkMode ? 'text-peacock-400' : 'text-peacock-600'}`}>Intelligence Sources</h4>
-                                
+
                                 <div className="grid grid-cols-2 gap-3">
                                     {ALL_POSSIBLE_SOURCES.map(source => {
                                         const isSelected = selectedSources.has(source.id);
@@ -575,23 +596,21 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
                                                 className={`
                                                     relative flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-200
                                                     ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02] active:scale-95'}
-                                                    ${isSelected 
-                                                        ? (isDarkMode ? 'bg-peacock-600 text-white shadow-lg shadow-peacock-900/50' : 'bg-white text-peacock-600 shadow-md ring-2 ring-peacock-500') 
+                                                    ${isSelected
+                                                        ? (isDarkMode ? `${source.bg} text-white shadow-lg` : `bg-white ${source.color} shadow-md ring-2 ${source.ring}`)
                                                         : (isDarkMode ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-white text-gray-500 hover:bg-white shadow-sm hover:shadow-md')}
                                                 `}
                                             >
-                                                <source.icon className={`w-8 h-8 mb-3 ${isSelected ? 'text-white' : ''}`} />
+                                                <source.icon className={`w-8 h-8 mb-3 ${isSelected ? (isDarkMode ? 'text-white' : 'currentColor') : ''}`} />
                                                 <span className="text-xs font-bold">{source.name}</span>
                                                 {isSelected && (
-                                                    <div className="absolute top-2 right-2">
-                                                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                                                    </div>
+                                                    <div className={`absolute top-2 right-2 w-2 h-2 rounded-full ${isDarkMode ? 'bg-white' : 'bg-green-500'} animate-pulse`} />
                                                 )}
                                             </button>
                                         );
                                     })}
                                 </div>
-                                
+
                                 {selectedSources.size === 0 ? (
                                     <div className="mt-6 text-center">
                                         <p className="text-xs text-red-500 font-medium animate-pulse">Select at least one source</p>
@@ -624,8 +643,8 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
     };
 
     const filteredProjects = projects.filter(p =>
-        (p.name?.toLowerCase().includes(search.toLowerCase()) ||
-            p.keyword?.toLowerCase().includes(search.toLowerCase()))
+    (p.name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.keyword?.toLowerCase().includes(search.toLowerCase()))
     );
 
     return (
@@ -682,7 +701,7 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary font-medium">
-                                       <span className="font-mono">{project.postCount || 0}</span> items
+                                        <span className="font-mono">{project.postCount || 0}</span> items
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <button onClick={() => onViewAnalysis(project)} className="flex items-center text-peacock-600 hover:text-peacock-700 transition-colors bg-peacock-100 hover:bg-peacock-200  px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide">
@@ -701,11 +720,11 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
 
 function UserCircle({ className }) {
     // Placeholder icon component to fix ReferenceError if Users is not imported
-    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-9"/></svg>
+    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 21a8 8 0 0 0-16 0" /><circle cx="10" cy="8" r="5" /><path d="M22 20c0-3.37-2-6.5-4-9" /></svg>
 }
 
 function Briefcase({ className }) {
-    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
 }
 
 
@@ -719,11 +738,11 @@ function ProfileDetailsModal({ profile, posts, onClose }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-subtle w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col border border-gray-200 dark:border-gray-800 animate-in zoom-in-95 duration-300">
-                
+
                 {/* Header */}
                 <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex justify-between items-start bg-white dark:bg-black rounded-t-2xl">
                     <div className="flex items-center gap-5">
-                         <div className="w-16 h-16 rounded-full bg-peacock-100 dark:bg-peacock-900/30 flex items-center justify-center text-3xl font-bold text-peacock-600">
+                        <div className="w-16 h-16 rounded-full bg-peacock-100 dark:bg-peacock-900/30 flex items-center justify-center text-3xl font-bold text-peacock-600">
                             {profile.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -751,7 +770,7 @@ function ProfileDetailsModal({ profile, posts, onClose }) {
 
                 {/* Scrollable Content */}
                 <div className="overflow-y-auto p-6 space-y-8 custom-scrollbar">
-                    
+
                     {/* Key Metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-4 bg-white dark:bg-black rounded-xl border border-gray-100 dark:border-gray-800">
@@ -786,7 +805,7 @@ function ProfileDetailsModal({ profile, posts, onClose }) {
                             </h3>
                         </div>
                         <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {userPosts.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((post, idx) => (
+                            {userPosts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).map((post, idx) => (
                                 <div key={idx} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-900/20 transition-colors">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
@@ -796,10 +815,9 @@ function ProfileDetailsModal({ profile, posts, onClose }) {
                                             </span>
                                         </div>
                                         {post.risk && (
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                                                post.risk === 'High' ? 'bg-red-100 text-red-700' : 
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${post.risk === 'High' ? 'bg-red-100 text-red-700' :
                                                 post.risk === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'
-                                            }`}>
+                                                }`}>
                                                 {post.risk}
                                             </span>
                                         )}
@@ -831,7 +849,7 @@ function ProfileIntelligence({ posts }) {
         const map = new Map();
         posts.forEach(p => {
             let user = p.author || p.username || 'Unknown';
-            
+
             // Smart Extraction for Legacy Data
             if ((!user || user === 'Instagram User' || user === 'Unknown') && p.platform === 'instagram' && p.content) {
                 const match = p.content.match(/Photo by ([^|]+)/);
@@ -839,10 +857,10 @@ function ProfileIntelligence({ posts }) {
             }
 
             if (!map.has(user)) {
-                map.set(user, { 
-                    name: user, 
-                    platforms: new Set(), 
-                    totalPosts: 0, 
+                map.set(user, {
+                    name: user,
+                    platforms: new Set(),
+                    totalPosts: 0,
                     highRisk: 0,
                     lastActive: null,
                     firstActive: null
@@ -852,24 +870,24 @@ function ProfileIntelligence({ posts }) {
             profile.totalPosts++;
             profile.platforms.add(p.platform || 'General');
             if (p.risk === 'High' || p.risk === 'Critical') profile.highRisk++;
-            
+
             const time = new Date(p.timestamp);
             if (!profile.lastActive || time > new Date(profile.lastActive)) profile.lastActive = p.timestamp;
             if (!profile.firstActive || time < new Date(profile.firstActive)) profile.firstActive = p.timestamp;
         });
-        return Array.from(map.values()).sort((a,b) => b.highRisk - a.highRisk || b.totalPosts - a.totalPosts);
+        return Array.from(map.values()).sort((a, b) => b.highRisk - a.highRisk || b.totalPosts - a.totalPosts);
     }, [posts]);
 
     return (
         <>
             {selectedProfile && (
-                <ProfileDetailsModal 
-                    profile={selectedProfile} 
-                    posts={posts} 
-                    onClose={() => setSelectedProfile(null)} 
+                <ProfileDetailsModal
+                    profile={selectedProfile}
+                    posts={posts}
+                    onClose={() => setSelectedProfile(null)}
                 />
             )}
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {profiles.map((p, i) => (
                     <div key={i} className="bg-white dark:bg-black p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm hover:shadow-md transition-all">
@@ -897,7 +915,7 @@ function ProfileIntelligence({ posts }) {
                                 </div>
                             )}
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-gray-100 dark:border-gray-800 mb-4">
                             <div>
                                 <p className="text-xs text-gray-500 uppercase font-semibold">Activity</p>
@@ -912,7 +930,7 @@ function ProfileIntelligence({ posts }) {
                         </div>
 
                         <div className="space-y-2">
-                             <div className="flex justify-between text-xs">
+                            <div className="flex justify-between text-xs">
                                 <span className="text-gray-500">First Seen:</span>
                                 <span className="text-gray-900 dark:text-gray-300 font-mono">{p.firstActive ? new Date(p.firstActive).toLocaleDateString() : 'N/A'}</span>
                             </div>
@@ -921,7 +939,7 @@ function ProfileIntelligence({ posts }) {
                                 <span className="text-gray-900 dark:text-gray-300 font-mono">{p.lastActive ? new Date(p.lastActive).toLocaleDateString() : 'N/A'}</span>
                             </div>
                         </div>
-                        
+
                         <button onClick={() => setSelectedProfile(p)} className="w-full mt-4 py-2 text-sm font-medium text-peacock-600 bg-peacock-50 dark:bg-peacock-900/20 rounded-lg hover:bg-peacock-100 transition-colors">
                             View Detailed Profile
                         </button>
@@ -934,7 +952,7 @@ function ProfileIntelligence({ posts }) {
 
 function TimelineView({ posts }) {
     const sortedPosts = React.useMemo(() => {
-        return [...posts].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        return [...posts].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }, [posts]);
 
     const [activeId, setActiveId] = useState(null);
@@ -942,23 +960,23 @@ function TimelineView({ posts }) {
     useEffect(() => {
         const observer = new IntersectionObserver(
             (entries) => {
-                 entries.forEach((entry) => {
+                entries.forEach((entry) => {
                     if (entry.isIntersecting) {
                         setActiveId(entry.target.getAttribute('data-id'));
                     }
                 });
             },
-            { rootMargin: '-30% 0px -30% 0px', threshold: 0.5 } 
+            { rootMargin: '-30% 0px -30% 0px', threshold: 0.5 }
         );
 
         const elements = document.querySelectorAll('.timeline-item');
         elements.forEach((el) => observer.observe(el));
 
         return () => {
-             elements.forEach((el) => observer.unobserve(el));
+            elements.forEach((el) => observer.unobserve(el));
         };
     }, [sortedPosts]);
-    
+
     // Find index of active item to style previous lines
     const activeIndex = React.useMemo(() => {
         if (!activeId) return -1;
@@ -976,16 +994,16 @@ function TimelineView({ posts }) {
 
     return (
         <div className="relative pl-8 space-y-8 animate-in fade-in duration-500 ml-4 py-4">
-             {/* Note: Removed parent border-l-2 to implement per-item dynamic line */}
+            {/* Note: Removed parent border-l-2 to implement per-item dynamic line */}
             {sortedPosts.map((post, idx) => {
                 const isActive = activeId === `post-${idx}`;
                 const isPast = activeIndex !== -1 && idx <= activeIndex;
                 const authorName = getEffectiveAuthor(post);
-                
+
                 return (
                     <div key={idx} data-id={`post-${idx}`} className="timeline-item relative group transition-all duration-500">
-                        
-                         {/* Dynamic Connecting Line (Draws DOWN to next item) */}
+
+                        {/* Dynamic Connecting Line (Draws DOWN to next item) */}
                         {idx < sortedPosts.length - 1 && (
                             <div className={`absolute left-[-29px] top-8 bottom-[-40px] transition-all duration-1000 ease-in-out
                                 ${isPast ? 'w-1 bg-white shadow-[0_0_12px_rgba(255,255,255,0.6)]' : 'w-0.5 bg-gray-800'}
@@ -996,7 +1014,7 @@ function TimelineView({ posts }) {
                         <div className={`absolute -left-[35px] top-4 w-4 h-4 rounded-full border-2 transition-all duration-700 ease-out z-10
                              ${isPast || isActive ? 'bg-white border-white scale-125 shadow-[0_0_10px_rgba(255,255,255,0.8)]' : `bg-black border-gray-600 ${post.risk === 'High' ? 'border-red-500' : ''}`}
                         `} />
-                        
+
                         <div className={`flex flex-col sm:flex-row gap-4 bg-white dark:bg-black p-4 rounded-xl border transition-all duration-500 ease-out ${isActive ? 'border-peacock-500 shadow-lg scale-[1.02]' : 'border-gray-800 shadow-sm opacity-80 hover:opacity-100'}`}>
                             <div className="sm:w-32 flex-shrink-0 text-right sm:text-left">
                                 <span className="text-xs font-mono text-gray-500 block">{new Date(post.timestamp).toLocaleTimeString()}</span>
@@ -1013,7 +1031,7 @@ function TimelineView({ posts }) {
                                     {post.risk === 'High' && <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded ml-auto">THREAT</span>}
                                 </div>
                                 <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{post.content}</p>
-                                
+
                                 {(post.url || post.sourceUrl) && (
                                     <div className="mt-3 flex justify-end">
                                         <a href={post.url || post.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-peacock-600 hover:text-peacock-700 hover:underline flex items-center gap-1 bg-peacock-50 dark:bg-peacock-900/20 px-2 py-1 rounded transition-colors">
@@ -1035,6 +1053,11 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
     const [summary, setSummary] = useState(initialData.summary);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [postSearch, setPostSearch] = useState('');
+    const [postFilters, setPostFilters] = useState({
+        highRiskOnly: false,
+        hasMedia: false,
+        sources: new Set()
+    });
     const [isSourceModalOpen, setIsSourceModalOpen] = useState(false);
     const [localProject, setLocalProject] = useState(project);
     const [activeTab, setActiveTab] = useState('feed');
@@ -1061,10 +1084,57 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
         }
     };
 
-    const filteredPosts = posts.filter(post =>
-        post.content?.toLowerCase().includes(postSearch.toLowerCase()) ||
-        post.username?.toLowerCase().includes(postSearch.toLowerCase())
-    );
+    // Flagging Logic
+    const handleToggleFlag = async (postId) => {
+        try {
+            const res = await fetch(`http://localhost:5001/api/intel/flag/${postId}`, { method: 'POST' });
+            if (!res.ok) throw new Error("Flag failed");
+
+            const data = await res.json();
+
+            // Update local state immediately
+            setPosts(prev => prev.map(p =>
+                p.id === postId ? { ...p, isManuallyFlagged: data.isManuallyFlagged } : p
+            ));
+
+            toast.success(data.message);
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to flag post");
+        }
+    };
+
+    // Intelligent Search Filtering
+    const intelligentFilter = (post) => {
+        const query = postSearch.toLowerCase().trim();
+        const activeSources = postFilters.sources;
+
+        // 1. Source Filter (Chips)
+        if (activeSources.size > 0 && !activeSources.has(post.platform)) {
+            return false;
+        }
+
+        // 2. Risk Filter
+        if (postFilters.highRiskOnly && (post.risk !== 'High' && post.risk !== 'Critical')) {
+            return false;
+        }
+
+        // 3. Media Filter
+        if (postFilters.hasMedia && !post.screenshotPath && !post.url) {
+            return false;
+        }
+
+        // 4. Text Search
+        if (!query) return true;
+
+        const contentMatch = post.content?.toLowerCase().includes(query);
+        const authorMatch = post.username?.toLowerCase().includes(query);
+        const tagsMatch = (post.enrichmentData?.risk_flags || []).some(flag => flag.toLowerCase().includes(query));
+
+        return contentMatch || authorMatch || tagsMatch;
+    };
+
+    const filteredPosts = posts.filter(intelligentFilter);
 
     const getRiskColor = (risk) => {
         if (risk === 'High') return 'bg-red-50 text-red-700 border-red-100';
@@ -1104,20 +1174,27 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-10 bg-subtle/95 backdrop-blur py-4 border-b border-gray-200 dark:border-gray-800">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors">
-                        <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" /> 
+                        <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                     </button>
                     <div>
                         <h3 className="text-xl font-bold text-primary flex items-center gap-2">
-                             {localProject.name} <span className="text-xs font-normal text-white bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full" title='project ID'>{localProject.projectId?.substr(0,6)}</span>
+                            {localProject.name} <span className="text-xs font-normal text-white bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full" title='project ID'>{localProject.projectId?.substr(0, 6)}</span>
                         </h3>
                         <div className="flex text-xs text-white mt-0.5 gap-3">
-                            <span className="flex items-center"><UserCircle className="w-3 h-3 mr-1"/> {localProject.investigator || 'Unknown'}</span>
-                            <span className="flex items-center"><Briefcase className="w-3 h-3 mr-1"/> {localProject.legalAuth || 'OSINT'}</span>
+                            <span className="flex items-center"><UserCircle className="w-3 h-3 mr-1" /> {localProject.investigator || 'Unknown'}</span>
+                            <span className="flex items-center"><Briefcase className="w-3 h-3 mr-1" /> {localProject.legalAuth || 'OSINT'}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <MagicSearch
+                        searchQuery={postSearch}
+                        setSearchQuery={setPostSearch}
+                        filters={postFilters}
+                        setFilters={setPostFilters}
+                    />
+
                     <div className="flex bg-white  p-1 rounded-lg">
                         <button onClick={() => setActiveTab('feed')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === 'feed' ? 'bg-white dark:bg-black shadow text-white' : 'text-black '}`}>Live Feed</button>
                         <button onClick={() => setActiveTab('profiles')} className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${activeTab === 'profiles' ? 'bg-white dark:bg-black shadow text-white' : 'text-black '}`}>Target Profiles</button>
@@ -1129,7 +1206,7 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
                     </button>
                     {localProject.type === 'Automated' && (
                         <button onClick={() => setIsSourceModalOpen(true)} className="p-2 flex items-center gap-2 font-semibold text-blue-600 hover:bg-blue-200 bg-blue-100 rounded-lg transition-colors" title="Manage Sources">
-                             <Activity className="w-5 h-5" /> Sources
+                            <Activity className="w-5 h-5" /> Sources
                         </button>
                     )}
                 </div>
@@ -1149,27 +1226,21 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
                         </div>
                         <div className="prose prose-sm dark:prose-invert max-w-none text-secondary bg-primary/30 p-4 rounded-lg ">
                             {isSummarizing ? (
-                                <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Processing evidence...</div>
+                                <div className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Processing evidence...</div>
                             ) : (
                                 <div dangerouslySetInnerHTML={{ __html: formattedSummary }} />
                             )}
                         </div>
                     </div>
 
-                     {/* Live Feed Table (Existing Code) */}
-                    <div className="bg-subtle rounded-xl shadow-sm  overflow-hidden">
-                         <div className="p-4  bg-primary/30 flex justify-between items-center">
-                            <h4 className="font-bold text-primary flex items-center gap-2">
+                    {/* Live Feed Table (Existing Code) */}
+                    <div className="bg-subtle rounded-xl shadow-sm overflow-visible relative min-h-[500px]">
+                        <div className="p-4 bg-primary/30 flex justify-between items-start">
+                            <h4 className="font-bold text-primary flex items-center gap-2 mt-2">
                                 <Activity className="w-4 h-4 text-peacock-500" /> Evidence Feed
                                 <span className="text-xs font-normal text-secondary bg-primary px-2 py-0.5 rounded-full">{filteredPosts.length} items</span>
                             </h4>
-                            <input
-                                type="text"
-                                placeholder="Filter content..."
-                                value={postSearch}
-                                onChange={(e) => setPostSearch(e.target.value)}
-                                className="text-sm p-2 w-64 rounded-lg bg-subtle"
-                            />
+
                         </div>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-primary">
@@ -1195,16 +1266,24 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap flex items-center gap-2">
                                                 {post.risk ? (
-                                                     <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full ${getRiskColor(post.risk)}`}>
+                                                    <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-full ${getRiskColor(post.risk)}`}>
                                                         {post.risk}
                                                     </span>
                                                 ) : <span className="text-gray-400 text-xs">-</span>}
 
                                                 {(post.url || post.sourceUrl) && (
-                                                     <a href={post.url || post.sourceUrl} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors" title="Go to Source">
+                                                    <a href={post.url || post.sourceUrl} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors" title="Go to Source">
                                                         <ExternalLink className="w-4 h-4 text-gray-500 hover:text-blue-600" />
-                                                     </a>
+                                                    </a>
                                                 )}
+
+                                                <button
+                                                    onClick={() => handleToggleFlag(post.id)}
+                                                    className={`p-1 rounded-full transition-colors ${post.isManuallyFlagged ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-purple-500'}`}
+                                                    title={post.isManuallyFlagged ? "Flagged by Officer" : "Flag as Suspicious"}
+                                                >
+                                                    <Flag className="w-4 h-4" />
+                                                </button>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 {post.screenshotPath ? (
@@ -1222,20 +1301,19 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
                 </div>
             )}
 
-            {activeTab === 'profiles' && <ProfileIntelligence posts={posts} />}
-            {activeTab === 'timeline' && <TimelineView posts={posts} />}
+            {activeTab === 'profiles' && <ProfileIntelligence posts={filteredPosts} />}
+            {activeTab === 'timeline' && <TimelineView posts={filteredPosts} />}
         </div>
     );
 }
 
-function ImageIcon({ className }) {
-     return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+{/* function ImageIcon({ className }) {
+    return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
 }
+ */}
 
 
-
-
-// function NewStrikeModal({ onClose, onScrape, isDarkMode }) {
+// function NewStrikeModal({onClose, onScrape, isDarkMode}) {
 //     const [projectName, setProjectName] = useState('');
 //     const [description, setDescription] = useState('');
 //     const [keyword, setKeyword] = useState('');
@@ -1410,7 +1488,7 @@ function ImageIcon({ className }) {
 //     const textPrimary = isDarkMode ? 'text-white' : 'text-black';
 //     const textLabel = isDarkMode ? 'text-white' : 'text-black';
 //     const textHelper = isDarkMode ? 'text-gray-400' : 'text-gray-600';
-    
+
 //     const bgInput = isDarkMode ? 'bg-black' : 'bg-white';
 //     const focusAccent = 'focus:border-peacock-500 focus:ring-2 focus:ring-peacock-500';
 //     const inputClasses = `w-full p-3 rounded-lg border transition-all duration-200 
@@ -1829,3 +1907,160 @@ function ImageIcon({ className }) {
 //         </div>
 //     );
 // }
+
+function MagicSearch({ searchQuery, setSearchQuery, filters, setFilters }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const containerRef = React.useRef(null);
+    const inputRef = React.useRef(null);
+
+    // Close on click outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                if (!searchQuery && filters.sources.size === 0 && !filters.highRiskOnly && !filters.hasMedia) {
+                    setIsExpanded(false);
+                }
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [searchQuery, filters]);
+
+    // Hotkey Ctrl+K to open
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                setIsExpanded(true);
+                setTimeout(() => inputRef.current?.focus(), 100);
+            }
+            if (e.key === 'Escape') {
+                setIsExpanded(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const toggleRisk = () => setFilters(prev => ({ ...prev, highRiskOnly: !prev.highRiskOnly }));
+    const toggleMedia = () => setFilters(prev => ({ ...prev, hasMedia: !prev.hasMedia }));
+    const toggleSource = (source) => {
+        setFilters(prev => {
+            const newSet = new Set(prev.sources);
+            if (newSet.has(source)) newSet.delete(source);
+            else newSet.add(source);
+            return { ...prev, sources: newSet };
+        });
+    };
+
+    return (
+        <div className="relative z-50 flex justify-end" ref={containerRef}>
+            <AnimatePresence mode='wait'>
+                {!isExpanded ? (
+                    <motion.button
+                        layoutId="search-container"
+                        onClick={() => { setIsExpanded(true); setTimeout(() => inputRef.current?.focus(), 100); }}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-200 dark:bg-gray-800  text-secondary rounded-full hover:border-peacock-500 hover:text-primary transition-colors shadow-sm"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                    >
+                        <Search className="w-4 h-4" />
+                        <span className="text-xs font-semibold pr-2">Filter Evidence</span>
+                        <div className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-800 text-gray-500 font-mono">⌘</div>
+                    </motion.button>
+                ) : (
+                    <motion.div
+                        layoutId="search-container"
+                        className="absolute right-0 top-0 w-[500px] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-peacock-500/30 overflow-hidden z-50"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.4 }}
+                    >
+                        {/* Header / Input */}
+                        <div className="flex items-center px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                            <Search className="w-5 h-5 text-peacock-500 mr-3" />
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search usernames, content, or flags..."
+                                className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-gray-900 dark:text-white placeholder-gray-400"
+                                autoFocus
+                            />
+                            <button
+                                onClick={() => setIsExpanded(false)}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <span className="text-[10px] font-bold">ESC</span>
+                            </button>
+                        </div>
+
+                        {/* Smart Filters */}
+                        <div className="p-3 bg-gray-50/50 dark:bg-black/20">
+                            <div className="flex flex-wrap gap-2">
+                                <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={toggleRisk}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${filters.highRiskOnly
+                                        ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-200 dark:border-red-800 shadow-[0_0_10px_rgba(239,68,68,0.2)]'
+                                        : 'bg-white dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                        }`}
+                                >
+                                    <AlertTriangle className="w-3.5 h-3.5" /> High Risk Only
+                                </motion.button>
+
+                                {/* <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={toggleMedia}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${filters.hasMedia
+                                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 border-blue-200 dark:border-blue-800 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
+                                        : 'bg-white dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                        }`}
+                                >
+                                    <ImageIcon className="w-3.5 h-3.5" /> Has Media
+                                </motion.button> */}
+
+                                <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+                                {['twitter', 'facebook', 'instagram', 'telegram', 'reddit', 'linkedin'].map(platform => (
+                                    <motion.button
+                                        key={platform}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={() => toggleSource(platform)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all capitalize ${filters.sources.has(platform)
+                                            ? 'bg-peacock-50 dark:bg-peacock-900/20 text-peacock-600 border-peacock-200 dark:border-peacock-800'
+                                            : 'bg-white dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                            }`}
+                                    >
+                                        {platform}
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Hint */}
+                        {(searchQuery || filters.sources.size > 0 || filters.highRiskOnly) && (
+                            <div className="px-4 py-2 bg-peacock-50/50 dark:bg-peacock-900/10 text-[10px] text-peacock-600 dark:text-peacock-400 font-medium flex justify-between items-center">
+                                <span>Active Filters Applied</span>
+                                <button
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        setFilters({ highRiskOnly: false, hasMedia: false, sources: new Set() });
+                                    }}
+                                    className="hover:underline"
+                                >
+                                    Clear All
+                                </button>
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}

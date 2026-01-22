@@ -39,7 +39,7 @@ node create-session.js
   "author": "DarkVendor99", // The username/channel name
   "timestamp": "2025-10-24T10:00:00Z", // When it was posted
   
-  // 🛡️ EVIDENCE CHAIN
+  // 🛡️EVIDENCE CHAIN
   "screenshotPath": "/evidence/evidence_10928374.png",
   "evidenceHash": "a1b2c3d4...", 
   

@@ -235,7 +235,6 @@ function samplePosts(posts, maxSample) {
 export const generateProjectSummary = async (req, res) => {
   const { id } = req.params;
   const SUMMARY_SAMPLE_SIZE = 50;
-  const RISK_BATCH_SIZE = 100;
 
   try {
     const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
@@ -266,12 +265,38 @@ export const generateProjectSummary = async (req, res) => {
       return res.status(200).json({ summary: "No posts found in database. Scraper may still be running." });
     }
 
+    // --- STEP 1: FORCE ANALYSIS ON ALL POSTS (Local is fast) ---
+    console.log(`[Summary] analyzing ${posts.length} posts locally before summarizing...`);
+    const enrichedPosts = await analyzeRiskBatch(posts);
+
+    // --- STEP 2: SAVE ANALYSIS TO DB ---
+    // This ensures the "Live Feed" shows tags immediately after this returns.
+    const bulkOps = enrichedPosts.map(p => ({
+      updateOne: {
+        filter: { _id: p._id },
+        update: {
+          $set: {
+            risk: p.risk,
+            sentiment: p.sentiment,
+            risk_score: p.risk_score,
+            enrichmentData: p.enrichmentData
+          }
+        }
+      }
+    }));
+
+    if (bulkOps.length > 0) {
+      await projectsCollection.db.collection('posts').bulkWrite(bulkOps);
+      console.log(`[Summary] Updated ${bulkOps.length} posts with local analysis data.`);
+    }
+
+    // --- STEP 3: GENERATE SUMMARY ---
+    // Use the ENRICHED posts for the summary so stats match DB
     let finalSummary = project.summary;
-    let allBulkOps = [];
+    const summaryPosts = samplePosts(enrichedPosts, SUMMARY_SAMPLE_SIZE);
 
-    const summaryPosts = samplePosts(posts, SUMMARY_SAMPLE_SIZE);
-
-    const analysis = await runFullProjectAnalysis(project.keyword, summaryPosts, posts.length);
+    // runFullProjectAnalysis (Local) uses the risk data we just generated
+    const analysis = await runFullProjectAnalysis(project.keyword, summaryPosts, enrichedPosts.length);
     finalSummary = analysis.summary;
 
     await projectsCollection.updateOne(
@@ -332,6 +357,28 @@ export const getProjectsForDashboard = async (req, res) => {
       { $limit: 14 }
     ]).toArray();
 
+    // FETCH PROMINENT CRITICAL CASES
+    // Aggregate by 'source' to count high-risk items per project
+    const criticalCasesAggregation = await projectsCollection.db.collection('posts').aggregate([
+      { $match: { risk: { $in: ['High', 'Critical'] } } },
+      { $group: { _id: "$source", highRiskCount: { $sum: 1 } } },
+      { $sort: { highRiskCount: -1 } },
+      { $limit: 5 }
+    ]).toArray();
+
+    // Map these counts back to project details
+    const criticalCases = criticalCasesAggregation.map(c => {
+      // Try to find matching project by sourceTag or projectId
+      const project = allProjects.find(p => p.sourceTag === c._id || p.projectId === c._id || p.projectId === c._id.replace('harvester-', ''));
+      return {
+        id: project ? project._id : c._id,
+        name: project ? project.name : c._id, // Fallback if orphaned
+        projectId: project ? project.projectId : 'N/A',
+        highRiskCount: c.highRiskCount,
+        projectObj: project // details for navigation
+      };
+    }).filter(c => c.name !== undefined);
+
     res.json({
       manual: manualProjects,
       automated: automatedProjects,
@@ -343,7 +390,8 @@ export const getProjectsForDashboard = async (req, res) => {
         formattedDate: new Date(p.timestamp).toLocaleString()
       })),
       riskStats: riskStats.length > 0 ? riskStats : [{ name: 'Low', value: 1 }],
-      activityStats: activityStats.map(a => ({ date: a._id, count: a.count }))
+      activityStats: activityStats.map(a => ({ date: a._id, count: a.count })),
+      criticalCases: criticalCases // New Data Field
     });
   } catch (e) {
     console.error("Error fetching projects for dashboard:", e);

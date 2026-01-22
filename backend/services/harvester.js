@@ -60,6 +60,7 @@ const PLATFORM_CONFIGS = {
         baseUrl: (q) => `https://old.reddit.com/search?q=${encodeURIComponent(q)}&sort=new`,
         selector: 'div.search-result-link',
         extract: async (el, page) => {
+            // console.log("[Reddit] Extracting element...");
             const titleEl = await el.$('a.search-title');
             const authorEl = await el.$('span.search-author a');
             const timeEl = await el.$('span.search-time time');
@@ -98,7 +99,9 @@ const PLATFORM_CONFIGS = {
     'linkedin': {
         baseUrl: (q) => `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(q)}&sortBy=recent`,
         selector: '.feed-shared-update-v2, li.reusable-search__result-container, div[data-urn]',
+
         extract: async (el, page) => {
+            // console.log("[LinkedIn] Attempting extraction...");
             const getTxt = async (sel) => {
                 try {
                     const node = await el.$(sel);
@@ -114,13 +117,44 @@ const PLATFORM_CONFIGS = {
                 await getTxt('.feed-shared-text') ||
                 await getTxt('.break-words') || '';
 
-            const linkEl = await el.$('a.app-aware-link, a.feed-shared-actor__container-link');
-            const url = linkEl ? await page.evaluate(n => n.href, linkEl) : null;
+            // Improved URL Extraction using URN
+            let url = null;
+            try {
+                // Try to find the data-urn on the element itself or a parent/child
+                const urn = await page.evaluate(e => {
+                    // Check for urn on element or children
+                    let u = e.getAttribute('data-urn') || e.querySelector('[data-urn]')?.getAttribute('data-urn');
+                    // Backup: check for data-id which is sometimes the activity ID
+                    if (!u) {
+                        const dataId = e.getAttribute('data-id') || e.querySelector('[data-id]')?.getAttribute('data-id');
+                        if (dataId && !isNaN(dataId)) u = `urn:li:activity:${dataId}`;
+                    }
+                    return u;
+                }, el);
+
+                if (urn) {
+                    url = `https://www.linkedin.com/feed/update/${urn}`;
+                } else {
+                    // Fallback: Check for the '...' menu or any link containing '/activity/'
+                    const linkEl = await el.$('a[href*="/activity/"], a.app-aware-link');
+                    if (linkEl) {
+                        const rawHref = await page.evaluate(n => n.href, linkEl);
+                        // Clean up href to be just the activity part if possible
+                        if (rawHref.includes('/activity/')) {
+                            const match = rawHref.match(/activity-([0-9]+)/);
+                            if (match) url = `https://www.linkedin.com/feed/update/urn:li:activity:${match[1]}`;
+                            else url = rawHref.split('?')[0];
+                        } else {
+                            url = rawHref;
+                        }
+                    }
+                }
+            } catch (e) { console.error("[LinkedIn] URL extraction error:", e); }
 
             return {
                 author: author,
                 content: content,
-                timestamp: new Date().toISOString(),
+                timestamp: new Date().toISOString(), // LinkedIn dates are hard to parse relative strings, keeping generic for now
                 url: url
             };
         }
@@ -131,6 +165,7 @@ const PLATFORM_CONFIGS = {
         extract: async (el, page) => {
             const imgEl = await el.$('img');
             const caption = imgEl ? await page.evaluate(el => el.alt, imgEl) : '';
+
 
             // Attempt to extract username from Alt Text "Photo by username..."
             let author = 'Instagram User';
@@ -463,8 +498,9 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                         const extracted = await config.extract(el, page);
                         if (!extracted.content && !extracted.url) continue;
 
+
                         const platformId = crypto.createHash('md5')
-                            .update(extracted.url || extracted.content + extracted.timestamp)
+                            .update(extracted.url || (extracted.content + extracted.author)) // Use Author instead of Timestamp for stability
                             .digest('hex');
 
                         const filename = `${platform}_${platformId}.png`;
