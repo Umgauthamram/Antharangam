@@ -60,11 +60,11 @@ async function createInvestigator() {
         };
 
         await users.insertOne(newUser);
-        console.log(`✅ User '${name}' created in Database.`);
+        console.log(` User '${name}' created in Database.`);
 
         // 3. Send Email
         if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-            console.warn("⚠️  EMAIL_USER or EMAIL_PASS missing in .env. Skipping email.");
+            console.warn("    EMAIL_USER or EMAIL_PASS missing in .env. Skipping email.");
             console.log(`\nCREDENTIALS FOR ${name}:`);
             console.log(`Email: ${email}`);
             console.log(`Password: ${password}`);
@@ -103,13 +103,13 @@ async function createInvestigator() {
 
     } catch (e) {
         if (e.code === 'EAUTH') {
-            console.error("\n❌ Email failed: Invalid Credentials.");
+            console.error("\n    Email failed: Invalid Credentials.");
             console.error("Tip: If using Gmail, you MUST use an 'App Password', not your login password.");
         } else {
-            console.error("\n❌ Email failed:", e.message);
+            console.error("\n    Email failed:", e.message);
         }
 
-        console.log(`\n⚠️  COULD NOT SEND EMAIL. HERE ARE THE CREDENTIALS:`);
+        console.log(`\n    COULD NOT SEND EMAIL. HERE ARE THE CREDENTIALS:`);
         console.log(`---------------------------------------------------`);
         console.log(`Email: ${email}`);
         console.log(`Password: ${password}`);

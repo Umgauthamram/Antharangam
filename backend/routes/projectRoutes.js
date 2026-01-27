@@ -1,16 +1,26 @@
 import express from 'express';
-import { getProjects, createStrike,  createAutomatedProject,   analyzeProjectRisk, getProjectsForDashboard, updateProjectSources, generateProjectSummary} from '../controllers/projectController.js';
+import { getProjects, getProjectById, getPostsBySource, createStrike, createAutomatedProject, analyzeProjectRisk, getProjectsForDashboard, updateProjectSources, generateProjectSummary, stopProject } from '../controllers/projectController.js';
 
 const router = express.Router();
 
 
 router.get('/', getProjects);
 
+router.get('/main-projects', getProjectsForDashboard);
+
+router.get('/by_source', getPostsBySource);
+
+// Get single project
+router.get('/:id', getProjectById);
+
 // POST /api/projects/strike/twitter (Creates a Manual Strike)
 router.post('/strike/twitter', createStrike);
 
 // POST /api/projects/automated (Creates an Automated Project)
 router.post('/automated', createAutomatedProject);
+
+// Stop Project
+router.post('/:id/stop', stopProject);
 
 // POST /api/projects/:id/summarize (Runs On-Demand AI)
 router.put('/:id/sources', updateProjectSources);

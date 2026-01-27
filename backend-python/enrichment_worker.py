@@ -103,7 +103,7 @@ def perform_ocr(screenshot_relative_path):
     image_path = os.path.normpath(image_path)
 
     if not os.path.exists(image_path):
-        print(f"⚠️ Image NOT found at: {image_path}")
+        print(f"   Image NOT found at: {image_path}")
         return ""
 
     try:

@@ -20,17 +20,17 @@ try:
     db = mongoclient[DBNAME]
     global postscollection
     postscollection = db.posts
-    print(f"✅ Worker Database connection established to {DBNAME}")
+    print(f"  Worker Database connection established to {DBNAME}")
 except Exception as e:
-    print(f"❌ Worker ERROR Failed to connect to MongoDB: {e}")
+    print(f"    Worker ERROR Failed to connect to MongoDB: {e}")
     exit(1)
 
 try:
     redisconn = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     redisconn.ping()
-    print(f"✅ RQ Worker Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+    print(f"  RQ Worker Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
 except redis_exceptions.ConnectionError as e:
-    print(f"❌ RQ Worker ERROR Failed to connect to Redis: {e}")
+    print(f"    RQ Worker ERROR Failed to connect to Redis: {e}")
     exit(1)
 
 def process_enrichment_job(jobpayload):
@@ -42,7 +42,7 @@ def process_enrichment_job(jobpayload):
     print(f"🔄 Task Starting enrichment for Post ID {postid}")
     
     if not postid:
-        print("❌ Task ERROR Job skipped - no Post ID.")
+        print("    Task ERROR Job skipped - no Post ID.")
         return False
     
     enricheddata = {
@@ -59,10 +59,10 @@ def process_enrichment_job(jobpayload):
     )
     
     if result.matched_count > 0:
-        print(f"✅ Task Successfully updated post {postid}")
+        print(f"  Task Successfully updated post {postid}")
         return True
     else:
-        print(f"⚠️  Task No post found with twitterPostId {postid}")
+        print(f"    Task No post found with twitterPostId {postid}")
         return False
 
 if __name__ == "__main__":
@@ -78,7 +78,7 @@ if __name__ == "__main__":
                     jobpayload = json.loads(serializedpayload)
                     success = process_enrichment_job(jobpayload)
                 except json.JSONDecodeError:
-                    print(f"❌ RQ Worker ERROR Failed to deserialize JSON payload: {serializedpayload[:100]}...")
+                    print(f"    RQ Worker ERROR Failed to deserialize JSON payload: {serializedpayload[:100]}...")
                 except Exception as e:
                     print(f"💥 RQ Worker CRITICAL PROCESSING ERROR: {e}")
             else:
@@ -87,7 +87,7 @@ if __name__ == "__main__":
             print("\n👋 RQ Worker shutting down gracefully...")
             break
         except Exception as e:
-            print(f"⚠️  RQ Worker loop error: {e}")
+            print(f"    RQ Worker loop error: {e}")
             time.sleep(1)
     
     redisconn.close()
@@ -136,7 +136,7 @@ def process_post_for_enrichment(jobpayload):
         print("Task ERROR Job skipped - no Post ID.")
         return False
     
-    # ✅ FIXED: NO ObjectId conversion
+    #   FIXED: NO ObjectId conversion
     print(f"Task Starting enrichment for Post ID {postidstr}")
     
     enricheddata = {

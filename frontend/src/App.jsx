@@ -9,6 +9,8 @@ import Login from './components/auth/Login';
 import PageNotFound from './pages/PageNotFound';
 import Landing from './pages/Landing';
 import Workbench from './pages/main/Workbench';
+import IntelCenter from './pages/main/IntelCenter';
+import DeveloperPortal from './pages/main/DeveloperPortal';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 export default function App() {
@@ -24,8 +26,11 @@ export default function App() {
         <Route path="" element={<MainLayout />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="intel" element={<IntelCenter />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="Case/:id" element={<Workbench />} />
           <Route path="Case" element={<Workbench />} />
+          <Route path="developer" element={<DeveloperPortal />} />
         </Route>
       </Route>
 

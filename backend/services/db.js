@@ -20,3 +20,4 @@ export const posts = db.collection('posts');
 export const cases = db.collection('cases');
 export const projects = db.collection('projects');
 export const users = db.collection('users');
+export const apiKeys = db.collection('api_keys');

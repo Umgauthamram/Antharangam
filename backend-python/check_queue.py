@@ -14,7 +14,7 @@ def check_queue():
     try:
         r = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
         r.ping()
-        print(f"✅ Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+        print(f"  Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
         
         # 1. Get Queue Length
         queue_len = r.llen(ENRICHMENT_QUEUE_NAME)
@@ -38,7 +38,7 @@ def check_queue():
                 print(f"   {i+1}. [Invalid JSON]: {item}")
 
     except Exception as e:
-        print(f"❌ Error connecting to Redis: {e}")
+        print(f"    Error connecting to Redis: {e}")
 
 if __name__ == "__main__":
     check_queue()

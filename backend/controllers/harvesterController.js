@@ -37,7 +37,7 @@ export const getHarvestersStatus = async (req, res) => {
   console.log("[API] Received GET /api/harvesters/status");
   try {
     const harvesters = await projectsCollection.find({ type: "Automated" }).toArray();
-    
+
     res.json(harvesters);
   } catch (e) {
     console.error(e);
@@ -47,17 +47,22 @@ export const getHarvestersStatus = async (req, res) => {
 
 // POST /api/harvesters/start
 export const startHarvesterJob = async (req, res) => {
-  const { id, name, keywords } = req.body;
-  console.log(`[API] Received POST /api/harvesters/start for ID: ${id}`);
+  const { id, name, keywords, platform } = req.body;
+  console.log(`[API] Received POST /api/harvesters/start for ID: ${id} Platform: ${platform}`);
 
   if (!id || !name || !keywords || keywords.length === 0) {
     return res.status(400).json({ error: "id, name, and a keywords array are required." });
   }
 
   try {
-    await startHarvester(id, name, keywords);
+    const platformToStart = platform || 'twitter';
+    await startHarvester(id, name, keywords, platformToStart);
 
     // UPDATE DB TO "Running"
+    await projectsCollection.updateOne(
+      { projectId: id },
+      { $set: { status: "Running" } }
+    );
     await projectsCollection.updateOne(
       { projectId: id },
       { $set: { status: "Running" } }
