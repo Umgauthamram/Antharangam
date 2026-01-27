@@ -3,42 +3,57 @@ import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { Api } from "telegram/tl/index.js";
 
-dotenv.config(); // ✅ MUST be first
+dotenv.config(); //   MUST be first
 
 const apiId = Number(process.env.TELEGRAM_API_ID);
 const apiHash = process.env.TELEGRAM_API_HASH;
 
 let client = null;
+let connectingPromise = null;
 
 export async function connectTelegram() {
-    if (client) return client;
+    if (client && client.connected) return client;
+    if (connectingPromise) return connectingPromise;
 
-    if (!process.env.TELEGRAM_SESSION) {
-        throw new Error("❌ TELEGRAM_SESSION is missing in .env");
-    }
+    connectingPromise = (async () => {
+        try {
+            const session = process.env.TELEGRAM_SESSION || process.env["TELEGRAM_SESSION "];
 
-    console.log("[TelegramAPI] Connecting...");
+            if (!session) {
+                console.error("[TelegramAPI]     TELEGRAM_SESSION is missing (Checked standard and 'TELEGRAM_SESSION ' with space)");
+                throw new Error("TELEGRAM_SESSION is missing in .env");
+            }
 
-    const stringSession = new StringSession(process.env.TELEGRAM_SESSION);
+            console.log("[TelegramAPI] Attempting connection via API...");
+            const stringSession = new StringSession(session.trim());
 
-    client = new TelegramClient(
-        stringSession,
-        apiId,
-        apiHash,
-        {
-            connectionRetries: 5,
-            useWSS: true,
-            testServers: false,
-            deviceModel: "Desktop",
-            systemVersion: "Windows 10",
-            appVersion: "1.0.0"
+            const newClient = new TelegramClient(
+                stringSession,
+                apiId,
+                apiHash,
+                {
+                    connectionRetries: 5,
+                    useWSS: true,
+                    deviceModel: "Antharangam Server",
+                    systemVersion: "Windows 10",
+                    appVersion: "1.0.0"
+                }
+            );
+
+            await newClient.connect();
+            console.log("[TelegramAPI]   Connected successfully!");
+            client = newClient;
+            return client;
+        } catch (err) {
+            console.error("[TelegramAPI]     Connection failed:", err.message);
+            connectingPromise = null; // Reset to allow retry
+            throw err;
+        } finally {
+            connectingPromise = null;
         }
-    );
+    })();
 
-    await client.connect();
-
-    console.log("[TelegramAPI] Connected!");
-    return client;
+    return connectingPromise;
 }
 
 export async function searchGlobal(keyword, limit = 5) {
@@ -80,7 +95,7 @@ export async function harvestMessages(channelUsername, limit = 20) {
     }));
 }
 // 🌍 Global Message Search (The "Data" finder)
-export async function searchGlobalMessages(keyword, limit = 50) {
+export async function searchGlobalMessages(keyword, limit = 100) {
     const client = await connectTelegram();
 
     const result = await client.invoke(
@@ -101,7 +116,19 @@ export async function searchGlobalMessages(keyword, limit = 50) {
     result.chats.forEach(c => chatMap.set(c.id.toString(), c));
     result.users.forEach(u => chatMap.set(u.id.toString(), u));
 
-    return result.messages.map(msg => {
+    const discoveredChannels = [];
+    result.chats.forEach(c => {
+        if (c.className === "Channel" || c.className === "Chat") {
+            discoveredChannels.push({
+                id: c.id,
+                title: c.title,
+                username: c.username,
+                url: c.username ? `https://t.me/${c.username}` : null
+            });
+        }
+    });
+
+    const messages = result.messages.map(msg => {
         let authorName = "Unknown";
         let username = null;
         let peerId = null;
@@ -118,7 +145,6 @@ export async function searchGlobalMessages(keyword, limit = 50) {
             username = chat.username;
         }
 
-        // Construct URL if public username exists
         const url = username ? `https://t.me/${username}/${msg.id}` : null;
 
         return {
@@ -130,5 +156,7 @@ export async function searchGlobalMessages(keyword, limit = 50) {
             author: authorName,
             username: username
         };
-    }).filter(m => m.text); // Filter empty messages
+    }).filter(m => m.text);
+
+    return { messages, discoveredChannels };
 }

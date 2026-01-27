@@ -433,10 +433,18 @@ export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
                     🚨 Critical Threat Breakdown (${highRiskCount} Items)
                 </h4>
                 <div style="margin-top: 16px;">
-                    ${posts.filter(p => p.risk === 'High').map(p => `
+                    ${posts.filter(p => p.risk === 'High').map(p => {
+            const domain = p.sourceUrl ? (new URL(p.sourceUrl).hostname.replace('www.', '')) : p.platform.toUpperCase();
+            return `
                         <div style="background-color: rgba(248, 113, 113, 0.05); border-left: 3px solid #f87171; padding: 12px 16px; margin-bottom: 12px; border-radius: 0 4px 4px 0;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                <span style="font-weight: bold; color: #f1f5f9;">@${p.username} <span style="font-weight: normal; color: #94a3b8; font-size: 12px;">(${p.platform?.toUpperCase()})</span></span>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-weight: bold; color: #f1f5f9;">@${p.username}</span>
+                                    ${p.sourceUrl ?
+                    `<a href="${p.sourceUrl}" target="_blank" style="font-weight: normal; color: #60a5fa; font-size: 12px; text-decoration: none; border: 1px solid #1e293b; padding: 2px 6px; border-radius: 4px; background: rgba(30,41,59,0.5);">🔗 ${domain}</a>`
+                    : `<span style="font-weight: normal; color: #94a3b8; font-size: 12px;">(${p.platform?.toUpperCase()})</span>`
+                }
+                                </div>
                                 <span style="font-size: 12px; color: #64748b;">${new Date(p.timestamp).toLocaleDateString()}</span>
                             </div>
                             <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-style: italic; font-family: 'Georgia', serif;">"${p.content.length > 200 ? p.content.substring(0, 200) + '...' : p.content}"</p>
@@ -446,7 +454,7 @@ export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
                                 </div>
                             ` : ''}
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
                 ` : ''}
             </div>

@@ -1,5 +1,5 @@
-import { projects as projectsCollection } from '../services/db.js';
-// import { runTwitterScrapeJob } from '../services/harvester.js';
+import { projects as projectsCollection, posts as postsCollection } from '../services/db.js';
+import { runUniversalScraper } from '../services/harvester.js';
 
 import { analyzeRiskBatch, runFullProjectAnalysis } from '../services/aiService.js';
 
@@ -9,15 +9,46 @@ import { ObjectId } from 'mongodb';
 
 
 export const getProjects = async (req, res) => {
-  // console.log("[API] Received GET /api/projects");
   try {
-    const projects = await projectsCollection.find()
-      .sort({ createdAt: -1 })
-      .toArray();
-    res.json(projects);
+    const projects = await projectsCollection.find().sort({ createdAt: -1 }).toArray();
+
+    // FETCH REAL COUNTS PER PROJECT
+    const counts = await postsCollection.aggregate([
+      { $group: { _id: "$source", count: { $sum: 1 } } }
+    ]).toArray();
+
+    const countMap = Object.fromEntries(counts.map(c => [c._id, c.count]));
+
+    const enrichedProjects = projects.map(p => {
+      const sourceId = p.type === 'Automated' ? `harvester-${p.projectId}` : p.sourceTag;
+      return {
+        ...p,
+        postCount: countMap[sourceId] || countMap[p.projectId] || 0
+      };
+    });
+
+    res.json(enrichedProjects);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch projects" });
+  }
+};
+
+export const getProjectById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const sourceId = project.type === 'Automated' ? `harvester-${project.projectId}` : project.sourceTag;
+    const actualCount = await postsCollection.countDocuments({
+      source: { $in: [sourceId, project.projectId, project.sourceTag] }
+    });
+
+    res.json({ ...project, postCount: actualCount });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to fetch project details" });
   }
 };
 
@@ -29,24 +60,31 @@ export const getPostsBySource = async (req, res) => {
   }
   console.log(`[API] Received GET /api/posts/by_source for: ${source}`);
   try {
-    const db = projectsCollection.db;
+    console.log(`[API DEBUG] Querying postsCollection for source: ${source}`);
+    if (!postsCollection) throw new Error("postsCollection is undefined in controller");
 
-    let posts = await db.collection('posts').find({ source: source }).sort({ timestamp: -1 }).toArray();
+    let posts = await postsCollection.find({ source: source }).sort({ timestamp: -1 }).toArray();
+    console.log(`[API DEBUG] Initial fetch found ${posts.length} posts`);
 
     if (posts.length === 0) {
       console.log(`[API] No posts for '${source}'. Trying 'harvester-${source}'...`);
-      posts = await db.collection('posts').find({ source: `harvester-${source}` }).sort({ timestamp: -1 }).toArray();
+      posts = await postsCollection.find({ source: `harvester-${source}` }).sort({ timestamp: -1 }).toArray();
+      console.log(`[API DEBUG] Harvester fallback found ${posts.length} posts`);
     }
 
     if (posts.length === 0 && !source.startsWith('strike-')) {
       try {
+        console.log(`[API DEBUG] Attempting project lookup for ID: ${source}`);
         const project = await projectsCollection.findOne({ _id: new ObjectId(source) });
         if (project && project.keyword) {
           const manualTag = `strike-twitter-${project.keyword}`;
           console.log(`[API] Trying manual tag: '${manualTag}'...`);
-          posts = await db.collection('posts').find({ source: manualTag }).sort({ timestamp: -1 }).toArray();
+          posts = await postsCollection.find({ source: manualTag }).sort({ timestamp: -1 }).toArray();
+          console.log(`[API DEBUG] Manual tag fallback found ${posts.length} posts`);
         }
-      } catch (e) { }
+      } catch (e) {
+        console.log(`[API DEBUG] Project lookup failed for ${source}: ${e.message}`);
+      }
     }
 
     console.log(`[API] Returning ${posts.length} posts.`);
@@ -58,8 +96,12 @@ export const getPostsBySource = async (req, res) => {
     res.json(posts);
 
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Failed to fetch posts" });
+    console.error("[API ERROR] Error in getPostsBySource:", e);
+    res.status(500).json({
+      error: "Failed to fetch posts",
+      details: e.message,
+      stack: e.stack
+    });
   }
 };
 
@@ -136,9 +178,16 @@ export const createAutomatedProject = async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const projectId = new ObjectId().toHexString();
-
   try {
+    const activeProject = await projectsCollection.findOne({ type: "Automated", status: "Running" });
+    if (activeProject) {
+      return res.status(400).json({
+        error: "Active investigation in progress",
+        message: `Please stop the currently running case "${activeProject.name}" before starting a new one.`
+      });
+    }
+
+    const projectId = new ObjectId().toHexString();
     const newProject = {
       _id: new ObjectId(projectId),
       projectId: projectId,
@@ -189,7 +238,7 @@ export const analyzeProjectRisk = async (req, res) => {
 
     const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
 
-    const posts = await projectsCollection.db.collection('posts').find({
+    const posts = await postsCollection.find({
       source: sourceIdentifier,
       $or: [
         { risk: { $exists: false } },
@@ -212,7 +261,7 @@ export const analyzeProjectRisk = async (req, res) => {
     }));
 
     if (bulkOps.length > 0) {
-      await projectsCollection.db.collection('posts').bulkWrite(bulkOps);
+      await postsCollection.bulkWrite(bulkOps);
     }
 
     res.json({ message: `Analyzed ${bulkOps.length} posts.`, postsAnalyzed: bulkOps.length });
@@ -244,19 +293,19 @@ export const generateProjectSummary = async (req, res) => {
 
     const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
 
-    let posts = await projectsCollection.db.collection('posts').find({
+    let posts = await postsCollection.find({
       source: sourceIdentifier
     }).toArray();
 
     if (posts.length === 0) {
       console.log(`[Summary] No posts for '${sourceIdentifier}'. Trying 'harvester-${sourceIdentifier}'...`);
-      posts = await projectsCollection.db.collection('posts').find({
+      posts = await postsCollection.find({
         source: `harvester-${sourceIdentifier}`
       }).toArray();
     }
 
     if (posts.length === 0) {
-      posts = await projectsCollection.db.collection('posts').find({
+      posts = await postsCollection.find({
         source: `strike-twitter-${project.keyword}`
       }).toArray();
     }
@@ -286,7 +335,7 @@ export const generateProjectSummary = async (req, res) => {
     }));
 
     if (bulkOps.length > 0) {
-      await projectsCollection.db.collection('posts').bulkWrite(bulkOps);
+      await postsCollection.bulkWrite(bulkOps);
       console.log(`[Summary] Updated ${bulkOps.length} posts with local analysis data.`);
     }
 
@@ -320,20 +369,37 @@ export const getProjectsForDashboard = async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    const manualProjects = allProjects.filter(p => p.type === 'Manual');
-    const automatedProjects = allProjects.filter(p => p.type === 'Automated');
+    const manualProjectsRaw = allProjects.filter(p => p.type === 'Manual');
+    const automatedProjectsRaw = allProjects.filter(p => p.type === 'Automated');
 
-    const totalPostsCount = await projectsCollection.db.collection('posts').countDocuments({});
+    // FETCH REAL COUNTS FOR ENRICHMENT
+    const countsAggregation = await postsCollection.aggregate([
+      { $group: { _id: "$source", count: { $sum: 1 } } }
+    ]).toArray();
+    const countMap = Object.fromEntries(countsAggregation.map(c => [c._id, c.count]));
+
+    const enrichProject = (p) => {
+      const sourceId = p.type === 'Automated' ? `harvester-${p.projectId}` : p.sourceTag;
+      return {
+        ...p,
+        postCount: countMap[sourceId] || countMap[p.projectId] || 0
+      };
+    };
+
+    const manualProjects = manualProjectsRaw.map(enrichProject);
+    const automatedProjects = automatedProjectsRaw.map(enrichProject);
+
+    const totalPostsCount = await postsCollection.countDocuments({});
 
     // FETCH RECENT POSTS
-    const recentPosts = await projectsCollection.db.collection('posts')
+    const recentPosts = await postsCollection
       .find({})
       .sort({ timestamp: -1 })
       .limit(20)
       .toArray();
 
     // FETCH THREAT STATS (AGGREGATION)
-    const riskAggregation = await projectsCollection.db.collection('posts').aggregate([
+    const riskAggregation = await postsCollection.aggregate([
       { $match: { risk: { $exists: true, $ne: null } } },
       { $group: { _id: "$risk", count: { $sum: 1 } } }
     ]).toArray();
@@ -341,7 +407,7 @@ export const getProjectsForDashboard = async (req, res) => {
     const riskStats = riskAggregation.map(r => ({ name: r._id, value: r.count }));
 
     // FETCH ACTIVITY STATS
-    const activityStats = await projectsCollection.db.collection('posts').aggregate([
+    const activityStats = await postsCollection.aggregate([
       {
         $project: {
           dateStr: { $substr: ["$timestamp", 0, 10] }
@@ -359,7 +425,7 @@ export const getProjectsForDashboard = async (req, res) => {
 
     // FETCH PROMINENT CRITICAL CASES
     // Aggregate by 'source' to count high-risk items per project
-    const criticalCasesAggregation = await projectsCollection.db.collection('posts').aggregate([
+    const criticalCasesAggregation = await postsCollection.aggregate([
       { $match: { risk: { $in: ['High', 'Critical'] } } },
       { $group: { _id: "$source", highRiskCount: { $sum: 1 } } },
       { $sort: { highRiskCount: -1 } },
@@ -432,5 +498,38 @@ export const updateProjectSources = async (req, res) => {
   } catch (error) {
     console.error("Update sources failed:", error);
     res.status(500).json({ error: "Failed to update sources" });
+  }
+};
+
+export const stopProject = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const project = await projectsCollection.findOne({ _id: new ObjectId(id) });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    console.log(`[API] Stopping investigation: ${project.name} (${project.projectId})`);
+
+    // 1. Stop all harvesters in the manager
+    await stopHarvester(project.projectId);
+
+    // 2. Update all sources in DB to stopped
+    const stoppedSources = (project.sources || []).map(s => ({ ...s, status: 'Stopped' }));
+
+    await projectsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: "Stopped",
+          sources: stoppedSources,
+          endDate: new Date()
+        }
+      }
+    );
+
+    res.json({ message: "Investigation stopped successfully" });
+  } catch (error) {
+    console.error("Stop project failed:", error);
+    res.status(500).json({ error: "Failed to stop project" });
   }
 };

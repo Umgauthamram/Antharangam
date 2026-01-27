@@ -29,23 +29,20 @@ export const getMyKeys = async (req, res) => {
     }
 };
 
-import { sendApiKeyEmail } from '../services/emailService.js';
+import { sendApiKeyEmail, sendKeyRevokedEmail } from '../services/emailService.js';
 
 // POST /api/keys
 export const createKey = async (req, res) => {
-    const { name, expiresInDays, quota, email } = req.body;
+    const { name, expiresInDays, quota, email, allowedPlatforms } = req.body;
     const ownerId = req.user?.id || '000000000000000000000000';
     // Use user's email if available in auth, otherwise require it in body or fallback (for MVP we might need it passed)
     const userEmail = req.user?.email || email || 'investigator@agency.gov.in';
 
     try {
-        const result = await generateApiKey(name || 'Default Key', ownerId, expiresInDays, quota);
+        const result = await generateApiKey(name || 'Default Key', ownerId, userEmail, expiresInDays, quota, allowedPlatforms);
         await saveApiKey(result.keyData);
 
         // Send Email
-        // We run this async without awaiting to not block the response? 
-        // Or await it to report email failure? 
-        // Let's await it to be sure.
         if (userEmail) {
             await sendApiKeyEmail(userEmail, result.keyData, result.key);
         }
@@ -60,7 +57,8 @@ export const createKey = async (req, res) => {
                 prefix: result.keyData.prefix,
                 createdAt: result.keyData.createdAt,
                 expiresAt: result.keyData.expiresAt,
-                quota: result.keyData.quota
+                quota: result.keyData.quota,
+                allowedPlatforms: result.keyData.allowedPlatforms
             }
         });
     } catch (e) {
@@ -75,9 +73,47 @@ export const revokeKey = async (req, res) => {
     const ownerId = req.user?.id || '000000000000000000000000';
 
     try {
-        await revokeApiKey(id, ownerId);
+        const key = await revokeApiKey(id, ownerId);
+        if (key && key.email) {
+            sendKeyRevokedEmail(key.email, key.name).catch(console.error);
+        }
         res.json({ message: "Key revoked" });
     } catch (e) {
         res.status(500).json({ error: "Failed to revoke key" });
+    }
+};
+
+// --- INTERNAL DEVELOPER ENDPOINTS ---
+
+import { apiKeys } from '../services/db.js';
+
+// GET /api/keys/internal/all
+export const getAllKeysInternal = async (req, res) => {
+    try {
+        const keys = await apiKeys.find({ isActive: true }).sort({ createdAt: -1 }).toArray();
+        res.json(keys);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch master keys" });
+    }
+};
+
+// DELETE /api/keys/internal/:id
+export const revokeKeyInternal = async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Custom logic to get email first since revokeApiKeyInternal might not be separated
+        const key = await apiKeys.findOne({ _id: new ObjectId(id) });
+        if (key) {
+            await apiKeys.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { isActive: false } }
+            );
+            if (key.email) {
+                sendKeyRevokedEmail(key.email, key.name).catch(console.error);
+            }
+        }
+        res.json({ message: "Master Key revoked" });
+    } catch (e) {
+        res.status(500).json({ error: "Master Revocation failed" });
     }
 };

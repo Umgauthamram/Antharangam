@@ -74,3 +74,79 @@ export const sendApiKeyEmail = async (email, keyData, fullKey) => {
         return null;
     }
 };
+
+export const sendKeyRevokedEmail = async (email, keyName) => {
+    try {
+        const mailOptions = {
+            from: `"Antharangam Security" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Security Alert: API Key Revoked',
+            html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f4f4f5; padding: 20px;">
+                <div style="background-color: #7f1d1d; padding: 30px; border-radius: 8px; text-align: center;">
+                    <h2 style="color: #fca5a5; margin: 0;">ANTHARANGAM</h2>
+                    <p style="color: #fecaca; font-size: 12px; letter-spacing: 2px;">SECURITY NOTIFICATION</p>
+                </div>
+                
+                <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; margin-top: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                    <h3 style="color: #1e293b; margin-top: 0;">API Access Revoked</h3>
+                    <p style="color: #475569; line-height: 1.6;">
+                        The API key named <strong>"${keyName}"</strong> has been revoked and is no longer active. Any applications using this key will immediately lose access.
+                    </p>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #ef4444;">
+                        <p style="margin: 0; color: #991b1b; font-size: 13px;">
+                            If you did not authorize this action, please contact the system administrator immediately.
+                        </p>
+                    </div>
+
+                    <p style="color: #64748b; font-size: 12px; margin-top: 30px;">
+                        This is an automated security message.
+                    </p>
+                </div>
+            </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Revocation Email sent: %s", info.messageId);
+        return info;
+    } catch (error) {
+        console.error("Error sending revocation email:", error);
+        return null;
+    }
+};
+
+export const sendKeyExpiringEmail = async (email, keyName, expiresAt) => {
+    try {
+        const mailOptions = {
+            from: `"Antharangam Security" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Action Required: API Key Expiring Soon',
+            html: `
+            <p>Your API key <strong>${keyName}</strong> is expiring on ${new Date(expiresAt).toLocaleDateString()}.</p>
+            <p>Please generate a new key before this date to ensure uninterrupted service.</p>
+            `
+        };
+        await transporter.sendMail(mailOptions);
+    } catch (e) {
+        console.error("Error sending expiring email", e);
+    }
+};
+
+export const sendKeyExpiredEmail = async (email, keyName) => {
+    try {
+        const mailOptions = {
+            from: `"Antharangam Security" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: 'Notice: API Key Expired',
+            html: `
+            <p>Your API key <strong>${keyName}</strong> has expired and has been deactivated.</p>
+            <p>You can generate a new key from the Developer Portal.</p>
+            `
+        };
+        await transporter.sendMail(mailOptions);
+    } catch (e) {
+        console.error("Error sending expired email", e);
+    }
+};

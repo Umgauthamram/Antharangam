@@ -1,23 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import {
-    Calendar, Zap, Send, Facebook, Instagram, Power, Linkedin, MessageCircle, X, Search, Loader2, ArrowLeft, Globe, Eye, Activity, Bot, FileText, Plus, ExternalLink, Filter, AlertTriangle, Image as ImageIcon, Flag
+    Calendar, Zap, Send, Facebook, Instagram, Power, Linkedin, MessageCircle, X, Search, Loader2, ArrowLeft, Globe, Eye, Activity, Bot, FileText, Plus, ExternalLink, Filter, AlertTriangle, Image as ImageIcon, Flag, Github
 } from 'lucide-react';
 import { useDarkMode } from '../../hooks/useDarkMode';
 import { motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import "../../components/ui/datepicker.css";
-import { useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { generateCaseReport } from '../../utils/reportGenerator';
 
 
 const ALL_POSSIBLE_SOURCES = [
-    { id: 'x', name: 'X (Twitter)', icon: X, enabled: true, color: 'text-zinc-900 dark:text-zinc-100', bg: 'bg-zinc-900', ring: 'ring-zinc-900' },
-    { id: 'reddit', name: 'Reddit', icon: MessageCircle, enabled: true, color: 'text-orange-600', bg: 'bg-orange-600', ring: 'ring-orange-600' },
-    { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true, color: 'text-blue-600', bg: 'bg-blue-600', ring: 'ring-blue-600' },
-    { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: true, color: 'text-pink-600', bg: 'bg-pink-600', ring: 'ring-pink-600' },
-    { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, enabled: true, color: 'text-blue-700', bg: 'bg-blue-700', ring: 'ring-blue-700' },
-    { id: 'telegram', name: 'Telegram', icon: Send, enabled: true, color: 'text-sky-500', bg: 'bg-sky-500', ring: 'ring-sky-500' },
+    { id: 'x', name: 'X (Twitter)', icon: X, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'reddit', name: 'Reddit', icon: MessageCircle, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'facebook', name: 'Facebook', icon: Facebook, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'telegram', name: 'Telegram', icon: Send, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'github', name: 'GitHub', icon: Github, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'google', name: ' Web', icon: Globe, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
 ];
 
 // function OCRViewer({ text }) {
@@ -160,6 +162,7 @@ function SourceControlModal({ project, onClose, onUpdate }) {
 }
 
 export default function Workbench() {
+    const { id } = useParams();
     const [view, setView] = useState('list');
     const [activeTab, setActiveTab] = useState('automated'); // Default to Automated
     const [isStrikeModalOpen, setIsStrikeModalOpen] = useState(false);
@@ -168,9 +171,11 @@ export default function Workbench() {
     const [currentProject, setCurrentProject] = useState(null);
     const [projects, setProjects] = useState([]);
     const [isProjectsLoading, setIsProjectsLoading] = useState(true);
+    const [isAnalysisLoading, setIsAnalysisLoading] = useState(false);
     const [isDarkMode] = useDarkMode();
 
     const location = useLocation();
+    const navigate = useNavigate();
 
     const fetchProjects = async () => {
         setIsProjectsLoading(true);
@@ -187,10 +192,43 @@ export default function Workbench() {
         }
     };
 
+    const fetchProjectDetails = async (projectId) => {
+        setIsAnalysisLoading(true);
+        try {
+            // 1. Fetch Project Obj
+            const pRes = await fetch(`http://localhost:5001/api/projects/${projectId}`);
+            if (!pRes.ok) throw new Error('Project not found');
+            const projectObj = await pRes.json();
+
+            // 2. Fetch Posts
+            const postsRes = await fetch(`http://localhost:5001/api/posts/by_source?source=${projectId}`);
+            if (!postsRes.ok) throw new Error('Failed to load intelligence');
+            const postsData = await postsRes.json();
+
+            const posts = postsData.map(post => ({
+                ...post,
+                id: post._id,
+                timestamp: new Date(post.timestamp).toLocaleString()
+            }));
+
+            setCurrentProject(projectObj);
+            setAnalysisResults({ posts, summary: projectObj.summary });
+            setView('analysis');
+        } catch (error) {
+            console.error("Deep link error:", error);
+            toast.error("Failed to load investigation workspace.");
+            setView('list');
+        } finally {
+            setIsAnalysisLoading(false);
+        }
+    };
+
     useEffect(() => {
         fetchProjects();
 
-        if (location.state) {
+        if (id) {
+            fetchProjectDetails(id);
+        } else if (location.state) {
             const { view, currentProject, analysisData } = location.state;
 
             if (view === 'analysis' && currentProject && analysisData) {
@@ -198,8 +236,10 @@ export default function Workbench() {
                 setAnalysisResults(analysisData);
                 setView('analysis');
             }
+        } else {
+            setView('list');
         }
-    }, [location.state]);
+    }, [id, location.state]);
 
     const handleRunStrike = async (formData) => {
         // ... (Keep strictly for backward compatibility helper functions if needed, but UI entry is removed)
@@ -212,6 +252,14 @@ export default function Workbench() {
 
     const handleRunHarvester = async (formData) => {
         const { projectName, keywords, sources } = formData;
+
+        // Check for active project
+        const activeProject = projects.find(p => p.type === 'Automated' && p.status === 'Running');
+        if (activeProject) {
+            toast.error(`Case "${activeProject.name}" is already running. Please stop it first.`);
+            return;
+        }
+
         if (!projectName || !keywords || sources.length === 0) {
             toast.error("Project Name, Keywords, and at least one Source are required.");
             return;
@@ -224,46 +272,43 @@ export default function Workbench() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData),
             });
-            if (!response.ok) throw new Error('Backend failed to create project');
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.message || 'Backend failed to create project');
+            }
             toast.success('Automated project created!');
             fetchProjects();
         } catch (error) {
             console.error("Error creating harvester:", error);
-            toast.error('Failed to create project.');
+            toast.error(error.message || 'Failed to create project.');
         }
     };
 
-    const handleViewAnalysis = async (project) => {
-        setCurrentProject(project);
-        setView('loading');
-        // toast('Fetching past analysis...');
+    const handleStopProject = async (project) => {
+        if (!window.confirm(`Are you sure you want to STOP the investigation "${project.name}"?`)) return;
+
+        toast.loading('Stopping investigation...', { id: 'stop-project' });
         try {
-            const sourceIdentifier = project.type === 'Automated' ? project.projectId : project.sourceTag;
-            const response = await fetch(`http://localhost:5001/api/posts/by_source?source=${encodeURIComponent(sourceIdentifier)}`);
-            if (!response.ok) throw new Error('Failed to fetch posts');
-            const posts = await response.json();
-            const formattedResults = posts.map(post => ({
-                ...post,
-                timestamp: new Date(post.timestamp).toLocaleString(),
-                id: post._id
-            }));
-            setAnalysisResults({
-                posts: formattedResults,
-                summary: project.summary || null
+            const response = await fetch(`http://localhost:5001/api/projects/${project._id}/stop`, {
+                method: 'POST',
             });
-            setView('analysis');
+            if (!response.ok) throw new Error('Failed to stop project');
+
+            toast.success('Case stopped successfully', { id: 'stop-project' });
+            fetchProjects();
         } catch (error) {
-            console.error("Error fetching project data:", error);
-            toast.error('Could not load analysis.');
-            setView('list');
+            console.error("Error stopping project:", error);
+            toast.error('Failed to stop case.', { id: 'stop-project' });
         }
+    };
+
+    const handleViewAnalysis = (project) => {
+        const id = project._id || project.projectId;
+        navigate(`/Case/${id}`);
     };
 
     const handleBackToList = () => {
-        setAnalysisResults(null);
-        setCurrentProject(null);
-        fetchProjects();
-        setView('list');
+        navigate('/Case');
     };
 
     const selectTab = (tab) => {
@@ -288,6 +333,16 @@ export default function Workbench() {
     };
 
     const renderContent = () => {
+        if (isAnalysisLoading) {
+            return (
+                <div className="flex flex-col items-center justify-center p-20 bg-subtle/30 rounded-2xl border border-gray-800/50 animate-pulse">
+                    <Loader2 className="w-12 h-12 text-peacock-500 animate-spin mb-4" />
+                    <h3 className="text-xl font-bold text-white uppercase tracking-widest">Reconstructing Workspace</h3>
+                    <p className="text-sm text-gray-500 mt-2">Fetching forensic data for case ID: {id}</p>
+                </div>
+            );
+        }
+
         switch (view) {
             case 'loading':
                 return (
@@ -336,6 +391,7 @@ export default function Workbench() {
                         projects={projectsToShow}
                         isLoading={isProjectsLoading}
                         onViewAnalysis={handleViewAnalysis}
+                        onStopProject={handleStopProject}
                         type={'Automated'}
                     />
                 );
@@ -346,7 +402,14 @@ export default function Workbench() {
     return (
         <div className="space-y-6">
             {/* Manual Strike Modal Removed */}
-            {isHarvesterModalOpen && (<NewHarvesterModal onClose={() => setIsHarvesterModalOpen(false)} onCreate={handleRunHarvester} isDarkMode={isDarkMode} />)}
+            {isHarvesterModalOpen && (
+                <NewHarvesterModal
+                    onClose={() => setIsHarvesterModalOpen(false)}
+                    onCreate={handleRunHarvester}
+                    isDarkMode={isDarkMode}
+                    activeProject={projects.find(p => p.type === 'Automated' && p.status === 'Running')}
+                />
+            )}
 
             {view === 'list' && (
                 <>
@@ -471,7 +534,7 @@ function NewStrikeModal({ onClose, onScrape, isDarkMode }) {
 
 
 
-function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
+function NewHarvesterModal({ onClose, onCreate, isDarkMode, activeProject }) {
     const [projectName, setProjectName] = useState('');
     const [keywords, setKeywords] = useState('');
     const [investigator, setInvestigator] = useState('');
@@ -529,6 +592,18 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
                         <X className="w-6 h-6" />
                     </button>
                 </div>
+
+                {activeProject && (
+                    <div className="mx-8 mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-4 animate-pulse">
+                        <AlertTriangle className="w-6 h-6 text-red-500" />
+                        <div>
+                            <p className="text-sm font-bold text-red-500">Active Case Detected</p>
+                            <p className="text-xs text-red-500/80">
+                                You must stop <strong>"{activeProject.name}"</strong> before initiating a new case.
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Content Grid */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-8 pb-8">
@@ -613,12 +688,16 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
 
                                 {selectedSources.size === 0 ? (
                                     <div className="mt-6 text-center">
-                                        <p className="text-xs text-red-500 font-medium animate-pulse">Select at least one source</p>
+                                        <p className="text-xs text-red-500 font-medium ">Select at least one source</p>
                                     </div>
                                 ) : (
                                     <div className="mt-8">
-                                        <button type="submit" disabled={!projectName || !keywords} className="w-full py-4 text-sm font-bold text-white uppercase tracking-widest rounded-xl bg-peacock-600 hover:bg-peacock-500 hover:shadow-lg hover:shadow-peacock-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]">
-                                            Initiate Case
+                                        <button
+                                            type="submit"
+                                            disabled={!projectName || !keywords || activeProject}
+                                            className="w-full py-4 text-sm font-bold text-white uppercase tracking-widest rounded-xl bg-peacock-600 hover:bg-peacock-500 hover:shadow-lg hover:shadow-peacock-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
+                                        >
+                                            {activeProject ? 'Deconfliction Required' : 'Initiate Case'}
                                         </button>
                                     </div>
                                 )}
@@ -632,7 +711,7 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
     );
 }
 
-function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
+function ProjectList({ projects, isLoading, onViewAnalysis, onStopProject, type }) {
     const [search, setSearch] = useState('');
 
     const getStatusClass = (status) => {
@@ -704,9 +783,19 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
                                         <span className="font-mono">{project.postCount || 0}</span> items
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <button onClick={() => onViewAnalysis(project)} className="flex items-center text-peacock-600 hover:text-peacock-700 transition-colors bg-peacock-100 hover:bg-peacock-200  px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide">
-                                            <Eye className="w-3 h-3 mr-1.5" /> Inspect
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => onViewAnalysis(project)} className="flex items-center text-peacock-600 hover:text-peacock-700 transition-colors bg-peacock-100 hover:bg-peacock-200  px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide">
+                                                <Eye className="w-3 h-3 mr-1.5" /> Inspect
+                                            </button>
+                                            {/* {project.status === 'Running' && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onStopProject(project); }}
+                                                    className="flex items-center text-red-600 hover:text-red-700 transition-colors bg-red-100 dark:bg-red-900/20 hover:bg-red-200 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide"
+                                                >
+                                                    <Power className="w-3 h-3 mr-1.5" /> Stop
+                                                </button>
+                                            )} */}
+                                        </div>
                                     </td>
                                 </tr>
                             ))
@@ -719,7 +808,6 @@ function ProjectList({ projects, isLoading, onViewAnalysis, type }) {
 }
 
 function UserCircle({ className }) {
-    // Placeholder icon component to fix ReferenceError if Users is not imported
     return <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 21a8 8 0 0 0-16 0" /><circle cx="10" cy="8" r="5" /><path d="M22 20c0-3.37-2-6.5-4-9" /></svg>
 }
 
@@ -1066,7 +1154,7 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
     useEffect(() => { setLocalProject(project); }, [project]);
 
     const handleGenerateSummaryAndRisk = async () => {
-        if (summary && !window.confirm("Re-run AI analysis? This consumes tokens.")) return;
+        // if (summary && !window.confirm("Re-run AI analysis? This consumes tokens.")) return;
         setIsSummarizing(true);
         toast('Running full AI Summary and Risk Triage');
         try {
@@ -2026,6 +2114,17 @@ function MagicSearch({ searchQuery, setSearchQuery, filters, setFilters }) {
                                 </motion.button> */}
 
                                 <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
+
+                                <motion.button
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => setFilters(prev => ({ ...prev, sources: new Set() }))}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${filters.sources.size === 0
+                                        ? 'bg-peacock-50 dark:bg-peacock-900/20 text-peacock-600 border-peacock-200 dark:border-peacock-800'
+                                        : 'bg-white dark:bg-gray-800 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                        }`}
+                                >
+                                    All
+                                </motion.button>
 
                                 {['twitter', 'facebook', 'instagram', 'telegram', 'reddit', 'linkedin'].map(platform => (
                                     <motion.button

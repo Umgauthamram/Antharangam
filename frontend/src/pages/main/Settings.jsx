@@ -16,7 +16,7 @@ export default function Settings() {
         <nav className="-mb-px flex space-x-6 overflow-x-auto">
           <TabButton name="Profile" icon={User} activeTab={activeTab} setActiveTab={setActiveTab} />
           <TabButton name="Security" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
-          <TabButton name="Developer API" icon={Code} activeTab={activeTab} setActiveTab={setActiveTab} />
+          {/* <TabButton name="Developer API" icon={Code} activeTab={activeTab} setActiveTab={setActiveTab} /> */}
         </nav>
       </div>
 
@@ -38,7 +38,7 @@ function ApiSettingsPanel() {
 
   // New Key Form State
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', period: 'days', duration: '30', quota: '1000', email: '' });
+  const [form, setForm] = useState({ name: '', period: 'days', duration: '30', quota: '1000', email: '', allowedPlatforms: ['all'] });
 
   useEffect(() => {
     fetchKeys();
@@ -63,14 +63,15 @@ function ApiSettingsPanel() {
       name: form.name,
       expiresInDays: expiresInDays,
       quota: form.quota,
-      email: form.email
+      email: form.email,
+      allowedPlatforms: form.allowedPlatforms || ['all']
     })
       .then(res => {
         setNewKey(res.data.key);
         fetchKeys();
         toast.success(res.data.message || "API Key generated successfully!");
         setShowForm(false);
-        setForm({ name: '', period: 'days', duration: '30', quota: '1000', email: '' });
+        setForm({ name: '', period: 'days', duration: '30', quota: '1000', email: '', allowedPlatforms: ['all'] });
       })
       .catch(err => {
         console.error(err);
@@ -163,6 +164,33 @@ function ApiSettingsPanel() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-xs uppercase text-gray-500 font-bold mb-2">Platform Scope</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {['all', 'twitter', 'facebook', 'github', 'reddit', 'telegram', 'google', 'linkedin'].map(p => (
+                      <label key={p} className="flex items-center gap-2 p-2 rounded bg-black/40 border border-gray-600 cursor-pointer hover:bg-gray-800 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={form.allowedPlatforms ? form.allowedPlatforms.includes(p) : (p === 'all')}
+                          onChange={() => {
+                            const current = new Set(form.allowedPlatforms || ['all']);
+                            if (p === 'all') {
+                              setForm({ ...form, allowedPlatforms: ['all'] });
+                            } else {
+                              if (current.has('all')) current.delete('all');
+                              if (current.has(p)) current.delete(p);
+                              else current.add(p);
+                              setForm({ ...form, allowedPlatforms: Array.from(current).length ? Array.from(current) : ['all'] });
+                            }
+                          }}
+                          className="rounded border-gray-500 text-peacock-500 bg-black focus:ring-0"
+                        />
+                        <span className="text-xs text-gray-300 capitalize">{p}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-3 pt-2">
                   <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 text-xs font-bold text-gray-400 hover:text-white">Cancel</button>
                   <button type="submit" className="px-4 py-1.5 bg-peacock-600 hover:bg-peacock-700 text-white rounded text-xs font-bold">Create & Email Key</button>
@@ -170,56 +198,56 @@ function ApiSettingsPanel() {
               </form>
             </div>
           )}
+        </div>
 
-          <div className="overflow-hidden rounded-lg border border-gray-800">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead className="bg-primary/50 text-gray-400 uppercase font-mono text-xs border-b border-gray-800">
-                <tr>
-                  <th className="p-3">Name</th>
-                  <th className="p-3">Expiry</th>
-                  <th className="p-3">Quota</th>
-                  <th className="p-3">Last Used</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right">Action</th>
+        <div className="overflow-hidden rounded-lg border border-gray-800">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead className="bg-primary/50 text-gray-400 uppercase font-mono text-xs border-b border-gray-800">
+              <tr>
+                <th className="p-3">Name</th>
+                <th className="p-3">Expiry</th>
+                <th className="p-3">Quota</th>
+                <th className="p-3">Last Used</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {keys.map(key => (
+                <tr key={key._id} className="hover:bg-white/5 transition-colors">
+                  <td className="p-3">
+                    <div className="font-medium text-white">{key.name}</div>
+                    <div className="text-[10px] text-gray-500 font-mono">{key.prefix}</div>
+                  </td>
+                  <td className="p-3 text-gray-400 text-xs">
+                    {key.expiresAt ? new Date(key.expiresAt).toLocaleDateString() : 'Never'}
+                  </td>
+                  <td className="p-3 text-gray-400 text-xs text-mono">
+                    {key.usage || 0} / {key.quota || '∞'}
+                  </td>
+                  <td className="p-3 text-gray-400 text-xs">{key.lastUsed ? new Date(key.lastUsed).toLocaleString() : 'Never'}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${key.isActive ? 'bg-green-900/20 text-green-500' : 'bg-red-900/20 text-red-500'}`}>
+                      {key.isActive ? 'Active' : 'Revoked'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right">
+                    {key.isActive && (
+                      <button onClick={() => handleRevoke(key._id)} className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-900/20 transition-colors" title="Revoke Key">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {keys.map(key => (
-                  <tr key={key._id} className="hover:bg-white/5 transition-colors">
-                    <td className="p-3">
-                      <div className="font-medium text-white">{key.name}</div>
-                      <div className="text-[10px] text-gray-500 font-mono">{key.prefix}</div>
-                    </td>
-                    <td className="p-3 text-gray-400 text-xs">
-                      {key.expiresAt ? new Date(key.expiresAt).toLocaleDateString() : 'Never'}
-                    </td>
-                    <td className="p-3 text-gray-400 text-xs text-mono">
-                      {key.usage || 0} / {key.quota || '∞'}
-                    </td>
-                    <td className="p-3 text-gray-400 text-xs">{key.lastUsed ? new Date(key.lastUsed).toLocaleString() : 'Never'}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${key.isActive ? 'bg-green-900/20 text-green-500' : 'bg-red-900/20 text-red-500'}`}>
-                        {key.isActive ? 'Active' : 'Revoked'}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right">
-                      {key.isActive && (
-                        <button onClick={() => handleRevoke(key._id)} className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-900/20 transition-colors" title="Revoke Key">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {keys.length === 0 && !loading && (
-                  <tr>
-                    <td colSpan="6" className="p-8 text-center text-gray-500">No API keys found. Generate one to get started.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          </div>
+              ))}
+              {keys.length === 0 && !loading && (
+                <tr>
+                  <td colSpan="6" className="p-8 text-center text-gray-500">No API keys found. Generate one to get started.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </SettingsCard>
     </div>
   );

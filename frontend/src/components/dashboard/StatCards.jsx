@@ -35,13 +35,6 @@ const StatCard = ({ title, value, subtext, icon: Icon, trend, color, isHealth })
 );
 
 export default function StatCards({ data }) {
-    // Mock Health Data for now - in production this would come from a real health check endpoint
-    const healthData = {
-        latency: '45ms',
-        dbStatus: 'Connected',
-        uptime: '99.9%'
-    };
-
     const riskCount = data.riskStats?.reduce((acc, curr) => curr.name !== 'Low' ? acc + curr.value : acc, 0) || 0;
 
     return (
@@ -56,6 +49,14 @@ export default function StatCards({ data }) {
             />
 
             <StatCard
+                title="Intelligence Volume"
+                value={data.totalPosts?.toLocaleString() || 0}
+                subtext="Total Live Captures"
+                icon={Activity}
+                color="green"
+            />
+
+            <StatCard
                 title="Threats Flagged"
                 value={riskCount}
                 subtext="Med/High Risks"
@@ -63,17 +64,6 @@ export default function StatCards({ data }) {
                 trend={5}
                 color="red"
             />
-
-            {/* System Health Cards */}
-            <StatCard
-                title="System Latency"
-                value={healthData.latency}
-                subtext="Optimal Performance"
-                icon={Activity}
-                color="green"
-                isHealth={true}
-            />
-
         </div>
     );
 }

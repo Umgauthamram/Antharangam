@@ -1,6 +1,18 @@
+
+
 python enrichment_runner.py
 node server.js
 npm run dev
+
+
+docker-compose down
+
+
+
+ "id": "job_unique_1",
+  "name": "My Search",
+  "keywords": ["your_keyword"],
+  "platform": "twitter"
 
 
 <!-- to create new user -->

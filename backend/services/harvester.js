@@ -6,6 +6,7 @@ import { searchGlobal, harvestMessages, searchGlobalMessages } from './telegramS
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import axios from 'axios';
 
 const stealth = StealthPlugin();
 stealth.enabledEvasions.delete('sourceurl');
@@ -77,7 +78,6 @@ const PLATFORM_CONFIGS = {
         baseUrl: (q) => `https://www.facebook.com/search/posts/?q=${encodeURIComponent(q)}`,
         selector: 'div[role="article"], div[aria-posinset], div[role="feed"] > div',
         extract: async (el, page) => {
-            // Enhanced selector for Facebook Author name
             const authorEl = await el.$('h3 strong, h4 strong, a[role="link"] strong, span > a[role="link"]');
             const textEl = await el.$('div[dir="auto"], span[dir="auto"]');
             const linkEl = await el.$('a[href*="/posts/"], a[href*="/photo"], a[href*="permalink"], a[href*="fbid="]');
@@ -101,7 +101,6 @@ const PLATFORM_CONFIGS = {
         selector: '.feed-shared-update-v2, li.reusable-search__result-container, div[data-urn]',
 
         extract: async (el, page) => {
-            // console.log("[LinkedIn] Attempting extraction...");
             const getTxt = async (sel) => {
                 try {
                     const node = await el.$(sel);
@@ -111,20 +110,19 @@ const PLATFORM_CONFIGS = {
 
             const author = await getTxt('.feed-shared-actor__name') ||
                 await getTxt('.update-components-actor__name') ||
+                await getTxt('.update-components-actor__title') ||
+                await getTxt('span[class*="actor__name"]') ||
                 await getTxt('.app-aware-link span[dir="ltr"] > span') || 'LinkedIn User';
 
             const content = await getTxt('.feed-shared-update-v2__description') ||
                 await getTxt('.feed-shared-text') ||
+                await getTxt('.update-components-text') ||
                 await getTxt('.break-words') || '';
 
-            // Improved URL Extraction using URN
             let url = null;
             try {
-                // Try to find the data-urn on the element itself or a parent/child
                 const urn = await page.evaluate(e => {
-                    // Check for urn on element or children
                     let u = e.getAttribute('data-urn') || e.querySelector('[data-urn]')?.getAttribute('data-urn');
-                    // Backup: check for data-id which is sometimes the activity ID
                     if (!u) {
                         const dataId = e.getAttribute('data-id') || e.querySelector('[data-id]')?.getAttribute('data-id');
                         if (dataId && !isNaN(dataId)) u = `urn:li:activity:${dataId}`;
@@ -135,11 +133,9 @@ const PLATFORM_CONFIGS = {
                 if (urn) {
                     url = `https://www.linkedin.com/feed/update/${urn}`;
                 } else {
-                    // Fallback: Check for the '...' menu or any link containing '/activity/'
-                    const linkEl = await el.$('a[href*="/activity/"], a.app-aware-link');
+                    const linkEl = await el.$('a[href*="/activity/"], a.app-aware-link, a[class*="update-content"]');
                     if (linkEl) {
                         const rawHref = await page.evaluate(n => n.href, linkEl);
-                        // Clean up href to be just the activity part if possible
                         if (rawHref.includes('/activity/')) {
                             const match = rawHref.match(/activity-([0-9]+)/);
                             if (match) url = `https://www.linkedin.com/feed/update/urn:li:activity:${match[1]}`;
@@ -149,12 +145,13 @@ const PLATFORM_CONFIGS = {
                         }
                     }
                 }
-            } catch (e) { console.error("[LinkedIn] URL extraction error:", e); }
+            } catch (e) { }
 
             return {
                 author: author,
+                username: author, // Duplicate for frontend fallback
                 content: content,
-                timestamp: new Date().toISOString(), // LinkedIn dates are hard to parse relative strings, keeping generic for now
+                timestamp: new Date().toISOString(),
                 url: url
             };
         }
@@ -165,34 +162,63 @@ const PLATFORM_CONFIGS = {
         extract: async (el, page) => {
             const imgEl = await el.$('img');
             const caption = imgEl ? await page.evaluate(el => el.alt, imgEl) : '';
+            const postUrl = await page.evaluate(el => el.href, el);
 
-
-            // Attempt to extract username from Alt Text "Photo by username..."
+            // Attempt to extract username from Alt Text or URL (if possible)
             let author = 'Instagram User';
             const userMatch = caption?.match(/Photo by ([^\s]+)|Image by ([^\s]+)/);
             if (userMatch) {
                 author = userMatch[1] || userMatch[2];
+            } else if (postUrl) {
+                // Sometimes the URL might help but usually it's just /p/CODE
             }
 
             return {
-                author: author,
+                author: author.replace(/[.,!]$/, ''), // Clean trailing punctuation
+                username: author,
                 content: caption || '[Instagram Post]',
                 timestamp: new Date().toISOString(),
-                url: await page.evaluate(el => el.href, el)
+                url: postUrl
             };
         }
-    }
+    },
+    'google': {
+        baseUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+        selector: 'div.g',
+        extract: async (el, page) => {
+            const titleEl = await el.$('h3');
+            const linkEl = await el.$('a');
+
+            const snippet = await page.evaluate(el => {
+                const s = el.querySelector('div.VwiC3b, div.yD9v9d, div[style*="-webkit-line-clamp"]');
+                return s ? s.innerText : '';
+            }, el);
+
+            const title = titleEl ? await page.evaluate(el => el.innerText, titleEl) : 'Untitled';
+            const url = linkEl ? await page.evaluate(el => el.href, linkEl) : null;
+
+            return {
+                author: 'Google Web',
+                username: url ? new URL(url).hostname : 'Web',
+                content: snippet,
+                title: title,
+                timestamp: new Date().toISOString(),
+                url: url
+            };
+        }
+    },
+
 };
 
-const calculateFileHash = (filePath) => {
-    return new Promise((resolve, reject) => {
-        const hash = crypto.createHash('sha256');
-        const stream = fs.createReadStream(filePath);
-        stream.on('data', (data) => hash.update(data));
-        stream.on('end', () => resolve(hash.digest('hex')));
-        stream.on('error', reject);
-    });
-};
+// const calculateFileHash = (filePath) => {
+//     return new Promise((resolve, reject) => {
+//         const hash = crypto.createHash('sha256');
+//         const stream = fs.createReadStream(filePath);
+//         stream.on('data', (data) => hash.update(data));
+//         stream.on('end', () => resolve(hash.digest('hex')));
+//         stream.on('error', reject);
+//     });
+// };
 
 const waitForAbortable = (promise, signal) => {
     if (!signal) return promise;
@@ -213,7 +239,7 @@ const waitForAbortable = (promise, signal) => {
 export async function runUniversalScraper(platform, query, limit = 50, sourceTag, onBatchFound, abortSignal) {
     if (platform === 'x') platform = 'twitter';
     const config = PLATFORM_CONFIGS[platform];
-    if (!config) throw new Error(`Platform '${platform}' not supported yet.`);
+    if (!config && platform !== 'github') throw new Error(`Platform '${platform}' not supported yet.`);
 
     const logPrefix = `[${platform.toUpperCase()}:${sourceTag}]`;
     console.log(`${logPrefix} Starting generic scrape for: ${query}`);
@@ -231,8 +257,75 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
         }
     };
 
+    // --- GITHUB API MODE (EXCLUSIVE) ---
+    if (platform === 'github') {
+        if (!process.env.GITHUB_TOKEN) {
+            console.error(`${logPrefix} ❌ GitHub Token missing. Please add GITHUB_TOKEN to .env. Puppeteer fallback is disabled.`);
+            return totalCount;
+        }
+
+        console.log(`${logPrefix} 🔑 GitHub API Token detected. Using Code Search API.`);
+        try {
+            // "code" search finds secrets inside files
+            const apiUrl = `https://api.github.com/search/code?q=${encodeURIComponent(query)}&per_page=${Math.min(limit, 100)}`;
+            const response = await axios.get(apiUrl, {
+                headers: {
+                    'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+
+            const items = response.data.items || [];
+            console.log(`${logPrefix} found ${items.length} files.`);
+
+            for (const item of items) {
+                if (totalCount >= limit) break;
+
+                const platformId = `gh_${item.repository.id}_${item.sha}`;
+
+                const postData = {
+                    twitterPostId: platformId,
+                    platform: 'github',
+                    sourceUrl: item.html_url,
+                    author: item.repository.owner.login || 'Unknown',
+                    content: `File: ${item.path}\nRepo: ${item.repository.full_name}\n\n(Click Source URL to view code)`,
+                    timestamp: new Date().toISOString(),
+                    source: sourceTag,
+                    sourceTag: sourceTag,
+                    severity: 'New'
+                };
+
+                const result = await postsCollection.updateOne(
+                    { twitterPostId: postData.twitterPostId },
+                    { $set: postData },
+                    { upsert: true }
+                );
+
+                if (result.upsertedId || result.modifiedCount > 0) {
+                    currentBatch.push({ ...postData, _id: result.upsertedId });
+                    totalCount++;
+                }
+            }
+
+            await flushBatch("Job Complete");
+            return totalCount;
+
+        } catch (error) {
+            console.error(`${logPrefix} GitHub API Failed: ${error.response ? error.response.status : error.message}`);
+            if (error.response && error.response.status === 403) {
+                console.log(`${logPrefix} ⚠️ Rate Limit exceeded or Token invalid.`);
+            }
+            // Fallback to Puppeteer? User said "instead of puppeteer", so we return here to avoid duplicates/waste.
+            return totalCount;
+        }
+    }
+
     // --- TELEGRAM API MODE ---
-    if (platform === 'telegram' && process.env.TELEGRAM_SESSION) {
+    let apiSuccess = false;
+    const tgSession = process.env.TELEGRAM_SESSION || process.env["TELEGRAM_SESSION "];
+
+    if (platform === 'telegram' && tgSession) {
+        console.log(`${logPrefix} 🔑 Telegram API Session detected. Using API Mode.`);
         try {
             let channelsToScrape = [];
             let directMessages = [];
@@ -241,25 +334,50 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                 const username = query.split('/').pop().split('?')[0];
                 channelsToScrape.push({ username: username, url: query });
             } else {
-                console.log(`${logPrefix} API Searching Global CHANNELS for: ${query}`);
-                try { channelsToScrape = await searchGlobal(query, 5); } catch (e) { }
+                console.log(`${logPrefix} API Phase 1: Global Channel Discovery for: ${query}`);
+                try { channelsToScrape = await searchGlobal(query, 10); } catch (e) { }
 
-                console.log(`${logPrefix} API Searching Global MESSAGES for: ${query}`);
-                try { directMessages = await searchGlobalMessages(query, 50); } catch (e) { }
+                console.log(`${logPrefix} API Phase 2: Global Message Search for: ${query}`);
+                let msgResults = { messages: [], discoveredChannels: [] };
+                try { msgResults = await searchGlobalMessages(query, 100); } catch (e) { }
 
-                console.log(`${logPrefix} Found ${channelsToScrape.length} Channels and ${directMessages.length} Direct Messages via API.`);
+                directMessages.push(...msgResults.messages);
+
+                // Add channels found via message search to our scraping target list
+                msgResults.discoveredChannels.forEach(chan => {
+                    if (!channelsToScrape.find(c => c.username === chan.username)) {
+                        channelsToScrape.push(chan);
+                    }
+                });
+
+                // ADVANCED FALLBACK: If 0 results for multi-word query, try the first / most unique word 
+                const queryParts = query.split(/\s+/).filter(p => p.length > 3);
+                if (directMessages.length === 0 && channelsToScrape.length === 0 && queryParts.length > 1) {
+                    const broadQuery = queryParts[0];
+                    console.log(`${logPrefix}    Zero results for "${query}". Retrying with Broad Search: "${broadQuery}"`);
+
+                    try {
+                        const broadMsgResults = await searchGlobalMessages(broadQuery, 50);
+                        // Local filter: Keep messages from broad results that match ANY of the original parts
+                        const filtered = broadMsgResults.messages.filter(m =>
+                            queryParts.some(term => m.text.toLowerCase().includes(term.toLowerCase()))
+                        );
+                        directMessages.push(...filtered);
+                        console.log(`${logPrefix} Broad Search recovered ${filtered.length} relevant messages.`);
+                    } catch (e) { }
+                }
+
+                console.log(`${logPrefix} 🗺️ Discovery Phase Complete. Found ${channelsToScrape.length} relevant channels and ${directMessages.length} direct messages.`);
             }
 
-            if (channelsToScrape.length === 0 && directMessages.length === 0) {
-                throw new Error("No API results found. Switching to Web Discovery...");
-            }
-
-            // 1. Process Channels
+            // 1. Process Channels (Deep Harvest)
+            const seenChannelUsernames = new Set();
             for (const channel of channelsToScrape) {
                 if (totalCount >= limit) break;
-                if (!channel.username) continue;
+                if (!channel.username || seenChannelUsernames.has(channel.username)) continue;
+                seenChannelUsernames.add(channel.username);
 
-                console.log(`${logPrefix} API Harvesting Channel: ${channel.username}`);
+                console.log(`${logPrefix} 📥 Deep Harvesting Channel: @${channel.username}`);
                 try {
                     const messages = await harvestMessages(channel.username, 20);
                     const normalized = messages.map(m => ({
@@ -274,60 +392,71 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
             }
 
             // 2. Process All Messages
-            console.log(`${logPrefix} Processing ${directMessages.length} total messages...`);
+            if (directMessages.length > 0) {
+                console.log(`${logPrefix} Processing ${directMessages.length} total messages...`);
 
-            const uniqueMessages = [];
-            const seenIds = new Set();
-            for (const m of directMessages) {
-                const uid = `${m.username}_${m.id}`;
-                if (!seenIds.has(uid)) {
-                    seenIds.add(uid);
-                    uniqueMessages.push(m);
-                }
-            }
-
-            for (const msg of uniqueMessages) {
-                if (totalCount >= limit) break;
-
-                const platformId = `tg_${msg.username || 'unknown'}_${msg.id}`;
-
-                const postData = {
-                    twitterPostId: platformId,
-                    platform: platform,
-                    sourceUrl: msg.url || `https://t.me/c/${msg.username || 'private'}/${msg.id}`,
-                    author: msg.author || msg.username || 'Unknown',
-                    content: msg.text || "[Media/Empty]",
-                    timestamp: new Date(msg.date * 1000),
-                    source: sourceTag,
-                    sourceTag: sourceTag,
-                    severity: 'New',
-                    enrichmentData: { views: msg.views }
-                };
-
-                const result = await postsCollection.updateOne(
-                    { twitterPostId: postData.twitterPostId },
-                    { $set: postData },
-                    { upsert: true }
-                );
-
-                if (result.upsertedId || result.modifiedCount > 0) {
-                    currentBatch.push({ ...postData, _id: result.upsertedId });
-                    totalCount++;
+                const uniqueMessages = [];
+                const seenIds = new Set();
+                for (const m of directMessages) {
+                    const uid = `${m.username}_${m.id}`;
+                    if (!seenIds.has(uid)) {
+                        seenIds.add(uid);
+                        uniqueMessages.push(m);
+                    }
                 }
 
-                if (currentBatch.length >= BATCH_SIZE) await flushBatch("Batch Full");
+                for (const msg of uniqueMessages) {
+                    if (totalCount >= limit) break;
+
+                    const platformId = `tg_${msg.username || 'unknown'}_${msg.id}`;
+
+                    const postData = {
+                        twitterPostId: platformId,
+                        platform: platform,
+                        sourceUrl: msg.url || `https://t.me/c/${msg.username || 'private'}/${msg.id}`,
+                        author: msg.author || msg.username || 'Unknown',
+                        content: msg.text || "[Media/Empty]",
+                        timestamp: new Date(msg.date * 1000),
+                        source: sourceTag,
+                        sourceTag: sourceTag,
+                        severity: 'New',
+                        enrichmentData: { views: msg.views }
+                    };
+
+                    const result = await postsCollection.updateOne(
+                        { twitterPostId: postData.twitterPostId },
+                        { $set: postData },
+                        { upsert: true }
+                    );
+
+                    if (result.upsertedId || result.modifiedCount > 0) {
+                        currentBatch.push({ ...postData, _id: result.upsertedId });
+                        totalCount++;
+                    }
+
+                    if (currentBatch.length >= BATCH_SIZE) await flushBatch("Batch Full");
+                }
+            } else {
+                console.log(`${logPrefix} API Mode: No messages found for query.`);
             }
 
             await flushBatch("Job Complete");
+            apiSuccess = true;
             return totalCount;
 
         } catch (e) {
-            console.error(`${logPrefix} API Mode Failed/Skipped: ${e.message}`);
-            console.log(`${logPrefix} Falling back to Web Scraper...`);
+            console.error(`${logPrefix}     Telegram API Mode Failed: ${e.message}`);
+
+            // CRITICAL: If session exists but failed, don't fall back to web scraper 
+            // as it will likely just time out or get blocked.
+            console.log(`${logPrefix} 🛑 API session is present but failed. Aborting to avoid flaky web fallback.`);
+            return totalCount;
         }
     } else if (platform === 'telegram') {
-        console.log(`${logPrefix} No API Session. Defaulting to Web Scraper.`);
+        console.log(`${logPrefix}    No Telegram API Session found in .env. Attempting (highly restricted) Web Scraper fallback.`);
     }
+
+    if (apiSuccess) return totalCount;
 
     // --- WEB SCRAPER MODE ---
     let browser = null;
@@ -346,7 +475,8 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
         const profileDir = path.join(USERDATADIR, `${platform}_session`);
 
         browser = await puppeteer.launch({
-            headless: (platform === 'facebook' || platform === 'instagram' || platform === 'linkedin' || platform === 'telegram' || platform === 'twitter' || platform === 'reddit') ? true : true,
+            // Run visible (non-headless) for Google & Socials to allow manual login/CAPTCHA solving
+            headless: (platform === 'google' || platform === 'facebook' || platform === 'linkedin' || platform === 'instagram' || platform === 'twitter' || platform === 'github') ? false : true,
             executablePath: executablePath(),
             userDataDir: profileDir,
             args: launchArgs,
@@ -362,6 +492,15 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
 
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         await page.setViewport({ width: 1280, height: 800 }); // Standard Desktop Res
+
+        // --- GOOGLE CONSENT HANDLING ---
+        if (platform === 'google') {
+            await page.goto("https://www.google.com", { waitUntil: 'domcontentloaded' });
+            try {
+                // Check for Consent or CPATCHA immediately on load
+                await new Promise(r => setTimeout(r, 2000));
+            } catch (e) { }
+        }
 
         if (platform === 'twitter' || platform === 'facebook' || platform === 'instagram') {
             const homeUrl = platform === 'twitter' ? 'https://x.com/home' : (platform === 'facebook' ? 'https://www.facebook.com/' : 'https://www.instagram.com/');
@@ -380,7 +519,7 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                     console.log(`${logPrefix} Waiting 60 seconds for you to login...`);
                     await new Promise(r => setTimeout(r, 60000));
                 } else {
-                    console.log(`${logPrefix} ✅ Session appears valid (Title: "${title}").`);
+                    console.log(`${logPrefix}   Session appears valid (Title: "${title}").`);
                 }
             } catch (e) { }
         }
@@ -397,6 +536,9 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
         }
 
         let targets = [config.baseUrl(query)];
+        if (platform === 'google') {
+            targets.push(config.baseUrl(query) + "&start=10"); // Page 2
+        }
 
         for (let tIdx = 0; tIdx < targets.length; tIdx++) {
             const url = targets[tIdx];
@@ -410,6 +552,27 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                 continue;
             }
             console.log(`${logPrefix} Page Title: ${await page.title()}`);
+
+            // Google Cloudflare/Bot Check Mitigation (Advanced)
+            const title = await page.title();
+            const currentUrl = await page.url();
+
+            if (platform === 'google' && (title.includes('Restricted') || currentUrl.includes('google.com/sorry') || title.includes('Before you continue'))) {
+                console.error(`${logPrefix} 🛑 Google BLOCKED access (CAPTCHA detected).`);
+                console.log(`${logPrefix} ⚠️ PAUSING execution for 5 minutes. Please MANUALLY solve the CAPTCHA in the browser window!`);
+
+                // Wait for user to solve it
+                const maxWait = 300; // 5 mins
+                for (let w = 0; w < maxWait; w++) {
+                    await new Promise(r => setTimeout(r, 1000));
+                    const newUrl = await page.url();
+                    if (!newUrl.includes('google.com/sorry') && !newUrl.includes('consent.google')) {
+                        console.log(`${logPrefix} ✅ CAPTCHA Solved! Resuming...`);
+                        break;
+                    }
+                    if (w % 30 === 0) console.log(`${logPrefix} ...waiting for manual solve (${w}/${maxWait}s)`);
+                }
+            }
 
             // Telegram Web Discovery (Google Fallback)
             if (platform === 'telegram' && url.includes('google.com')) {
@@ -448,6 +611,8 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                     break;
                 }
 
+                const selector = platform === 'google' ? 'div.g, div.tF2Cxc, div.MjjYud' : config.selector;
+
                 try {
                     // Login / Popup Handling
                     if (platform === 'facebook' || platform === 'instagram' || platform === 'linkedin') {
@@ -462,7 +627,16 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                     }
 
                     const waitTimeout = (totalCount === 0) ? 60000 : 10000;
-                    await waitForAbortable(page.waitForSelector(config.selector, { timeout: waitTimeout }), abortSignal);
+                    try {
+                        await waitForAbortable(page.waitForSelector(selector, { timeout: waitTimeout }), abortSignal);
+                    } catch (err) {
+                        if (platform === 'google') {
+                            const debugPath = path.join(EVIDENCE_DIR, 'debug_google_crash.png');
+                            await page.screenshot({ path: debugPath });
+                            console.error(`${logPrefix} Saved debug screenshot to /evidence/debug_google_crash.png`);
+                        }
+                        throw err;
+                    }
                 } catch (e) {
                     if (abortSignal && abortSignal.aborted) break;
 
@@ -490,14 +664,43 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                     break;
                 }
 
-                const elements = await page.$$(config.selector);
+                const elements = await page.$$(selector);
+                console.log(`${logPrefix}  Found ${elements.length} elements matching selector "${selector}"`);
+
+                if (elements.length === 0 && postsFromCurrentTarget === 0) {
+                    console.log(`${logPrefix} No results found on current target. Page source may have changed or access is restricted.`);
+                }
 
                 for (const el of elements) {
                     if (totalCount >= limit) break;
                     try {
-                        const extracted = await config.extract(el, page);
+                        let extracted = await config.extract(el, page);
                         if (!extracted.content && !extracted.url) continue;
 
+                        // --- GOOGLE DEEP CRAWL ---
+                        if (platform === 'google' && extracted.url) {
+                            console.log(`${logPrefix} Deep Crawling: ${extracted.url}`);
+                            const detailPage = await browser.newPage();
+                            try {
+                                await detailPage.goto(extracted.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                                const fullContent = await detailPage.evaluate(() => {
+                                    const selectors = ['article', 'main', '.content', '.post-content', 'body'];
+                                    for (const sel of selectors) {
+                                        const el = document.querySelector(sel);
+                                        if (el && el.innerText.length > 200) return el.innerText;
+                                    }
+                                    return Array.from(document.querySelectorAll('p')).map(p => p.innerText).join('\n\n');
+                                });
+                                if (fullContent && fullContent.length > 100) {
+                                    extracted.content = fullContent.slice(0, 5000); // Store up to 5k chars
+                                    console.log(`${logPrefix}   Extracted ${fullContent.length} chars from page.`);
+                                }
+                            } catch (err) {
+                                console.error(`${logPrefix}     Failed deep crawl: ${err.message}`);
+                            } finally {
+                                await detailPage.close();
+                            }
+                        }
 
                         const platformId = crypto.createHash('md5')
                             .update(extracted.url || (extracted.content + extracted.author)) // Use Author instead of Timestamp for stability
@@ -519,7 +722,7 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                             sourceUrl: extracted.url,
                             author: extracted.author,
                             content: extracted.content,
-                            timestamp: extracted.timestamp,
+                            timestamp: new Date(extracted.timestamp || Date.now()).toISOString(),
                             screenshotPath: screenshotPath,
                             source: sourceTag,
                             sourceTag: sourceTag
@@ -562,15 +765,22 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
         return totalCount;
 
     } catch (e) {
-        if (e.message.includes('Job stopped')) {
-            console.log(`${logPrefix} Job stopped.`);
+        const isAborted = e.message.toLowerCase().includes('aborted') || e.message.toLowerCase().includes('stopped');
+        if (isAborted) {
+            console.log(`${logPrefix} Job stopped/aborted.`);
         } else {
             console.error(`${logPrefix} Crash:`, e);
         }
         await flushBatch("Job Stopped");
         return totalCount;
     } finally {
-        if (browser) await browser.close();
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (err) {
+                console.error(`${logPrefix} Error closing browser:`, err.message);
+            }
+        }
     }
 }
 

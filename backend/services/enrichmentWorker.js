@@ -1,5 +1,5 @@
 import Redis from 'ioredis';
-import { posts as postsCollection } from './db.js';
+import { posts as postsCollection, projects as projectsCollection } from './db.js';
 import { analyzePostMultimodal } from './aiService.js';
 import 'dotenv/config';
 
@@ -58,11 +58,19 @@ async function processQueue() {
 
 async function handleJob(jobData) {
     const start = Date.now();
-    const { id } = jobData;
-
-    // console.log(`[EnrichmentWorker] ⚡ Processing Post: ${id}`);
+    const { id, source } = jobData;
 
     try {
+        // --- STOP CHECK ---
+        // source is 'harvester-projectId'
+        if (source && source.startsWith('harvester-')) {
+            const projectId = source.replace('harvester-', '');
+            const project = await projectsCollection.findOne({ projectId: projectId });
+
+            if (project && project.status === 'Stopped') {
+                return; // Drop job silently for stopped project
+            }
+        }
         // 1. Analyze with Gemini (Multimodal)
         const analysisResult = await analyzePostMultimodal(jobData);
 
@@ -94,13 +102,13 @@ async function handleJob(jobData) {
 
         const duration = ((Date.now() - start) / 1000).toFixed(2);
         if (updateResult.matchedCount > 0) {
-            console.log(`[EnrichmentWorker] ✅ Finished Post ${id} in ${duration}s | Risk: ${analysisResult.risk}`);
+            console.log(`[EnrichmentWorker]   Finished Post ${id} in ${duration}s | Risk: ${analysisResult.risk}`);
         } else {
-            console.warn(`[EnrichmentWorker] ⚠️ Post ${id} analyzed but not found in DB to update.`);
+            console.warn(`[EnrichmentWorker]    Post ${id} analyzed but not found in DB to update.`);
         }
 
     } catch (err) {
-        console.error(`[EnrichmentWorker] ❌ Error processing post ${id}:`, err);
+        console.error(`[EnrichmentWorker]     Error processing post ${id}:`, err);
     }
 }
 

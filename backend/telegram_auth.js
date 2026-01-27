@@ -35,7 +35,7 @@ async function main() {
         onError: (err) => console.error(err),
     });
 
-    console.log("\n✅ Telegram login successful!");
+    console.log("\n  Telegram login successful!");
     console.log("🔑 Save this session string in your .env file as TELEGRAM_SESSION:\n");
     console.log(client.session.save());
 

@@ -10,7 +10,7 @@ const SALT_ROUNDS = 10;
  * Format: sk_live_<keyId>_<randomHex>
  * Returns: { key: "plain_text_key", keyParams: { ...toSaveInDb } }
  */
-export const generateApiKey = async (name, ownerId, expiresInDays = null, quota = null) => {
+export const generateApiKey = async (name, ownerId, email = null, expiresInDays = null, quota = null, allowedPlatforms = []) => {
     // 1. Generate a unique ID for the key (16 chars hex)
     const keyId = crypto.randomBytes(8).toString('hex');
 
@@ -33,11 +33,13 @@ export const generateApiKey = async (name, ownerId, expiresInDays = null, quota 
     const keyData = {
         keyId: keyId, // Publicly indexable ID
         name,
+        email, // Track who this belongs to
         prefix: `sk_live_${keyId}...`,
         hash: hashedKey,
         ownerId: ownerId ? new ObjectId(ownerId) : null,
         expiresAt: expiresAt,
         quota: quota ? parseInt(quota) : null,
+        allowedPlatforms: allowedPlatforms && allowedPlatforms.length > 0 ? allowedPlatforms : ['all'], // Default to all if empty provided
         usage: 0, // Track usage
         createdAt: new Date(),
         lastUsed: null,
@@ -98,8 +100,53 @@ export const listApiKeys = async (ownerId) => {
 };
 
 export const revokeApiKey = async (id, ownerId) => {
-    return await apiKeys.updateOne(
-        { _id: new ObjectId(id), ownerId: new ObjectId(ownerId) },
-        { $set: { isActive: false } }
-    );
+    // Find first to get details (for email etc if needed up stack)
+    const key = await apiKeys.findOne({ _id: new ObjectId(id), ownerId: new ObjectId(ownerId) });
+    if (key) {
+        await apiKeys.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { isActive: false } }
+        );
+    }
+    return key;
+    return key;
+};
+
+// CRON JOB HELPERS
+
+export const getExpiringKeys = async () => {
+    const today = new Date();
+    const threeDaysFromNow = new Date();
+    threeDaysFromNow.setDate(today.getDate() + 3);
+
+    // 1. Find keys expiring in 3 days or less, that are active, and haven't had a warning sent
+    const expiringSoon = await apiKeys.find({
+        isActive: true,
+        expiresAt: { $gt: today, $lte: threeDaysFromNow },
+        warningSent: { $ne: true }
+    }).toArray();
+
+    return { expiringSoon };
+};
+
+export const markWarningSent = async (id) => {
+    return await apiKeys.updateOne({ _id: new ObjectId(id) }, { $set: { warningSent: true } });
+};
+
+export const deactivateExpiredKeys = async () => {
+    const today = new Date();
+    // Find active keys that have passed their expiry
+    const expired = await apiKeys.find({
+        isActive: true,
+        expiresAt: { $lt: today }
+    }).toArray();
+
+    if (expired.length > 0) {
+        // Bulk deactivate
+        await apiKeys.updateMany(
+            { _id: { $in: expired.map(k => k._id) } },
+            { $set: { isActive: false } }
+        );
+    }
+    return expired;
 };

@@ -35,10 +35,10 @@ console.log("=================================================");
     console.log("👉 Do NOT close the browser until you see the Home Feed.");
 
     await new Promise(resolve => browser.on('disconnected', resolve));
-    console.log("✅ Session creation complete.");
+    console.log("  Session creation complete.");
 
   } catch (e) {
-    console.log(`❌ An error occurred: ${e}`);
+    console.log(`    An error occurred: ${e}`);
     if (browser) await browser.close();
   }
 })();

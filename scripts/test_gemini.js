@@ -17,12 +17,12 @@ async function runTest() {
         console.log(JSON.stringify(result, null, 2));
 
         if (result.risk === 'High' && result.risk_flags.length > 0) {
-            console.log("\n✅ SUCCESS: High risk detected correctly.");
+            console.log("\n  SUCCESS: High risk detected correctly.");
         } else {
-            console.log("\n⚠️ WARNING: Risk detection might be off.");
+            console.log("\n   WARNING: Risk detection might be off.");
         }
     } catch (e) {
-        console.error("\n❌ TEST FAILED:", e);
+        console.error("\n    TEST FAILED:", e);
     }
 }
 
