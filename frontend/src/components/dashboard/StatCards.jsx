@@ -1,10 +1,9 @@
-import React from 'react';
 import { AlertTriangle, Search, Activity, Server, Clock } from 'lucide-react';
 
-const StatCard = ({ title, value, subtext, icon: Icon, trend, color, isHealth }) => (
+const StatCard = ({ title, value, subtext, icon: Icon, trend, color, isHealth, error }) => (
     <div className={`bg-subtle p-5 rounded-xl relative overflow-hidden group transition-all border border-gray-800 hover:border-${color}-500/50 flex-1`}>
         {isHealth ? (
-            // System Health Variant
+            // System Health Variant (Existing)
             <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-full bg-${color}-900/20`}>
                     <Icon className={`w-6 h-6 text-${color}-500`} />
@@ -24,9 +23,9 @@ const StatCard = ({ title, value, subtext, icon: Icon, trend, color, isHealth })
                 <div className="relative z-10">
                     <p className="text-secondary text-xs uppercase tracking-wider font-bold">{title}</p>
                     <h3 className="text-2xl font-bold text-primary mt-1">{value}</h3>
-                    <p className="text-xs text-gray-500 mt-2 flex items-center">
+                    <p className={`text-xs mt-2 flex items-center ${error ? 'text-red-400' : 'text-gray-500'}`}>
                         {trend && <span className="text-green-500 mr-1">▲ {trend}%</span>}
-                        {subtext}
+                        {error ? error : subtext}
                     </p>
                 </div>
             </>

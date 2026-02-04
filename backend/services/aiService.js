@@ -1,203 +1,79 @@
 
-
 // import { GoogleGenerativeAI } from "@google/generative-ai";
-// import 'dotenv/config';
+import 'dotenv/config';
 
-// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Gemini (DISABLED)
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
 
-// const summaryModel = genAI.getGenerativeModel({
-//   model: "gemini-2.0-flash-lite",
-//   temperature: 0.3
+// const model = genAI.getGenerativeModel({
+//     model: "gemini-2.0-flash-lite",
+//     temperature: 0.2
 // });
 
+// Delay helper
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// const structuredModel = genAI.getGenerativeModel({
-//   model: "gemini-2.0-flash-lite"
-// });
+// Retry logic wrapper (DISABLED)
+/*
+async function generateWithRetry(prompt, maxRetries = 3) {
+    let retries = 0;
+    while (retries < maxRetries) {
+        try {
+            return await model.generateContent(prompt);
+        } catch (error) {
+            if (error.status === 429 || error.message?.includes('429')) {
+                retries++;
+                const delay = Math.pow(2, retries) * 1000 + (Math.random() * 1000);
+                console.warn(`[Gemini] Rate limit hit. Retrying in ${(delay / 1000).toFixed(1)}s...`);
+                await sleep(delay);
+            } else {
+                throw error;
+            }
+        }
+    }
+    throw new Error("Againt rate limit exceeded after retries");
+}
+*/
 
+// --- LOCAL RULES-BASED ANALYSIS (FAST FALLBACK) ---
 
+const HIGH_RISK_KEYWORDS = [
+    // Violence & Terror
+    'kill', 'terror', 'bomb', 'suicide', 'murder', 'assassinate', 'explosive', 'weapon', 'gun', 'ammo',
+    'shoot', 'attack', 'dead', 'death', 'genocide', 'massacre', 'behead', 'hostage', 'torture',
+    'radical', 'extremist', 'jihad', 'isis', 'al-qaeda', 'cartel', 'trafficking', 'smuggle',
 
+    // Criminal & Illegal
+    'steal', 'hacked', 'illegal', 'drug', 'cocaine', 'heroin', 'meth', 'fentanyl', 'dealer',
+    'market', 'darknet', 'onion', 'tor', 'carding', 'cc', 'cvv', 'fullz', 'dump', 'leak',
+    'malware', 'ransomware', 'virus', 'trojan', 'botnet', 'ddos', 'exploit', 'vulnerability',
+    'bypass', 'crack', 'stolen', 'counterfeit', 'fake id', 'passport', 'laundering',
 
-// // Helper function for retry logic with exponential backoff
-// async function generateContentWithRetry(model, params, maxRetries = 5) {
-//     let retries = 0;
-//     while (retries < maxRetries) {
-//         try {
-//             return await model.generateContent(params);
-//         } catch (error) {
-//             const isRateLimit = error.status === 429 || error.message?.includes('429');
-//             const isServerOverload = error.status === 503 || error.message?.includes('503');
+    // Financial Fraud (High Severity)
+    'money laundering', 'ponzi', 'pyramid scheme', 'guaranteed returns', 'dm me for money',
+    'instant profit', 'double your money', 'flip cash', 'cash app flip', 'bank log',
+    'clean money', 'dirty money', 'transfer hack', 'wire transfer', 'western union hack'
+];
 
-//             if (isRateLimit || isServerOverload) {
-//                 retries++;
-//                 const baseDelay = Math.pow(2, retries) * 1000; 
+const MEDIUM_RISK_KEYWORDS = [
+    // Scams & Phishing
+    'scam', 'fraud', 'urgent', 'act now', 'click here', 'password', 'login', 'verify',
+    'account suspended', 'limited time', 'winner', 'prize', 'giveaway', 'lottery',
+    'claim now', 'free money', 'gift card', 'voucher', 'coupon', 'exclusive deal',
+    'risk free', 'investment', 'profit', 'earnings',
 
-//                 const delay = baseDelay + Math.random() * 1000;
+    // Crypto & Hype
+    'crypto', 'bitcoin', 'btc', 'eth', 'ethereum', 'usdt', 'airdrop', 'presale',
+    'private key', 'seed phrase', 'wallet', 'recovery', 'mask', 'trust wallet',
+    'pump', 'dump', 'moon', '100x', '1000x', 'gem', 'signal', 'mining',
+    'forex', 'trading', 'binary option', 'expert trader', 'mentor',
 
-//                 console.warn(`[Gemini] ${isRateLimit ? 'Rate Limit (429)' : 'Overload (503)'} hit. Retrying in ${(delay/1000).toFixed(1)}s... (Attempt ${retries}/${maxRetries})`);
-
-//                 await new Promise(resolve => setTimeout(resolve, delay));
-//             } else {
-//                 throw error;
-//             }
-//         }
-//     }
-//     throw new Error(`[Gemini] Failed after ${maxRetries} retries due to persistent rate limiting/overload.`);
-// }
-
-// export async function runFullProjectAnalysis(query, postsToAnalyze, totalPostsFound) {
-
-//   const MAX_POSTS_PER_ANALYSIS = 10;
-
-//   if (!postsToAnalyze || postsToAnalyze.length === 0) {
-//     return { summary: "No posts were found for this query.", riskResults: [] };
-//   }
-
-//   if (postsToAnalyze.length > MAX_POSTS_PER_ANALYSIS) {
-//     console.warn(`[AI Service] Truncating analysis sample from ${postsToAnalyze.length} to ${MAX_POSTS_PER_ANALYSIS}.`);
-
-//     postsToAnalyze = postsToAnalyze.slice(0, MAX_POSTS_PER_ANALYSIS);
-//   }
-
-//   const postsData = postsToAnalyze.map(p => `ID: ${p._id}\nContent: ${p.content}`).join('\n---\n');
-
-//   const systemPrompt = `
-// You are a professional OSINT (Open-Source Intelligence) analyst.
-// Your task is to analyze the provided sample of social media posts and perform two actions:
-
-// 1. **Generate a formal intelligence summary:** This summary must cover key findings based on the sample, following a structure with a Title, Executive Summary, and Key Findings. Highlight all important entities (usernames, locations, threats) by wrapping them in double asterisks (e.g., **@username**). Include Risk Level: Low / Moderate / High / Critical.
-
-// 2. **Analyze each post in the sample for risk and sentiment.**
-
-// **CRUCIAL INSTRUCTION:** Output ONLY a valid JSON object.
-// `;
-
-//   const userPrompt = `
-// **Original Query:** "${query}"
-// **Total Posts Found in Scrape:** ${totalPostsFound}
-// **Posts Sampled for Detailed Analysis:** ${postsToAnalyze.length}
-
-// ${postsData}
-// ---
-
-// Please generate the full Threat Intelligence Summary (Markdown) and the post-by-post risk analysis (JSON array) based on this sample.
-// `;
-
-
-//   try {
-//     const result = await generateContentWithRetry(structuredModel, {
-//       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-//       systemInstruction: systemPrompt,
-//       generationConfig: {
-//         responseMimeType: "application/json",
-//         responseSchema: {
-//           type: "OBJECT",
-//           properties: {
-//             summary: { type: "STRING" },
-//             post_analysis: {
-//               type: "ARRAY",
-//               items: {
-//                 type: "OBJECT",
-//                 properties: {
-//                   id: { type: "STRING" },
-//                   risk: { type: "STRING", enum: ["High", "Medium", "Low"] },
-//                   sentiment: { type: "STRING", enum: ["Negative", "Neutral", "Positive"] }
-//                 },
-//                 required: ["id", "risk", "sentiment"]
-//               }
-//             }
-//           },
-//           required: ["summary", "post_analysis"]
-//         }
-//       }
-//     });
-
-
-//     let jsonText = result.text; 
-//         if (!jsonText) {
-//             jsonText = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-//             if (!jsonText) {
-//                 console.error("[AI Service] Empty text detected. Full API result:", JSON.stringify(result, null, 2));
-//                 throw new Error("AI returned an empty or invalid response structure.");
-//             }
-//         }
-//     const cleanJsonText = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-
-//         const parsed = JSON.parse(cleanJsonText);
-
-//         return {
-//             summary: parsed.summary,
-//             riskResults: parsed.post_analysis
-//         };
-
-//     } catch (error) {
-//         console.error("[AI Service] Error calling Gemini API:", error);
-//         return { summary: "Error: AI analysis failed or returned invalid data.", riskResults: [] };
-//     }
-// }
-
-
-// export async function analyzeRiskBatch(posts) {
-//   if (!posts || posts.length === 0) return [];
-
-//   const postsData = posts.map(p => `ID: ${p._id}\nContent: ${p.content}`).join('\n---\n');
-
-//   const systemPrompt = `
-// You are an expert content moderator and threat analyst.
-//  Analyze the following social media posts.
-// For EACH post, determine:
-// 1. Risk Level: "High", "Medium", or "Low" (Based on violence, illegal acts, threats).
-// 2. Sentiment: "Negative", "Neutral", or "Positive".
-
-// Output ONLY a valid JSON array. Format:
-// [{"id": "post_id", "risk": "High", "sentiment": "Negative"}, ...]
-//  `;
-
-//   try {
-//     const result = await generateContentWithRetry(summaryModel, {
-//       contents: [{ role: "user", parts: [{ text: postsData }] }],
-//       systemInstruction: systemPrompt,
-//       generationConfig: {
-//         responseMimeType: "application/json",
-//         responseSchema: {
-//           type: "ARRAY",
-//           items: {
-//             type: "OBJECT",
-//             properties: {
-//               id: { type: "STRING" },
-//               risk: { type: "STRING", enum: ["High", "Medium", "Low"] },
-//               sentiment: { type: "STRING", enum: ["Negative", "Neutral", "Positive"] }
-//             },
-//             required: ["id", "risk", "sentiment"]
-//           }
-//         }
-//       }
-//     });
-
-//     let text = result.text; 
-//         if (!text) {
-//             text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-//         }
-
-//         if (!text) {
-//             console.error("[AI] Risk analysis failed: Received empty response text. Full API result:", JSON.stringify(result, null, 2));
-//             return [];
-//         }
-
-//         const jsonString = text.replace(/```json/g, '').replace(/```/g, '').trim();
-//         return JSON.parse(jsonString);
-
-//     } catch (error) {
-//         console.error("[AI] Risk analysis failed:", error);
-//         return [];
-//     }
-// }
-
-
-
-const HIGH_RISK_KEYWORDS = ['scam', 'fraud', 'steal', 'hack', 'illegal', 'drug', 'weapon', 'kill', 'terror', 'bomb', 'suicide', 'money laundering', 'guaranteed returns', 'dm me for money'];
-const MEDIUM_RISK_KEYWORDS = ['investment', 'crypto', 'urgent', 'act now', 'click here', 'password', 'login', 'verify', 'account suspended'];
+    // Suspicious Behavior
+    'dm me', 'inbox me', 'send message', 'whatsapp', 'telegram', 'snapchat',
+    'secret', 'hidden', 'private group', 'vip connection', 'insider info',
+    'bulk', 'cheap', 'discount', 'wholesale', 'refurbished', 'unlocked',
+    'jailbreak', 'activator', 'generator', 'bot', 'automation'
+];
 
 export async function analyzePostMultimodal(post) {
     const { content, id } = post;
@@ -229,7 +105,7 @@ export async function analyzePostMultimodal(post) {
         }
     }
 
-    // Phone Extraction Regex (Simple India/US)
+    // Regex extraction (Phone, UPI)
     const phoneRegex = /(\+?\d{1,3}[- ]?)?\d{10}/g;
     const extractedPhones = (content || '').match(phoneRegex) || [];
     if (extractedPhones.length > 0) {
@@ -237,7 +113,6 @@ export async function analyzePostMultimodal(post) {
         if (risk === 'Low') { risk = 'Medium'; riskScore = 40; }
     }
 
-    // UPI Extraction Regex
     const upiRegex = /[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}/g;
     const extractedUpis = (content || '').match(upiRegex) || [];
     if (extractedUpis.length > 0) {
@@ -245,231 +120,257 @@ export async function analyzePostMultimodal(post) {
         if (risk === 'Low') { risk = 'Medium'; riskScore = 45; }
     }
 
-    // console.log(`[LocalAnalysis] Analyzed Post ${id}: Risk=${risk}`);
-
     return {
-        risk: risk,
-        sentiment: sentiment,
+        risk,
+        sentiment,
         risk_score: riskScore,
         risk_flags: riskFlags,
-        ner_entities: [],
         extracted_phones: extractedPhones,
         extracted_upis: extractedUpis,
-        ocr_text: null,
-        summary: `Local analysis determined ${risk} risk based on keywords.`
+        ner_entities: []
     };
 }
 
 
 
-// Batch analysis reusing the single post logic
 export const analyzeRiskBatch = async (posts) => {
-    // Process all posts in parallel (since it's local and fast)
-    const results = await Promise.all(posts.map(async (post) => {
-        // Only re-analyze if risk is missing or we want to force refresh. 
-        // For now, let's force refresh or at least ensure we get full enrichment structure.
-        const analysis = await analyzePostMultimodal(post);
-        return {
-            ...post,
-            ...analysis, // This overwrites/adds risk, sentiment, risk_flags, etc.
-            enrichmentData: {
-                ...post.enrichmentData,
-                risk_flags: analysis.risk_flags,
-                extracted_phones: analysis.extracted_phones,
-                extracted_upis: analysis.extracted_upis,
-                ner_entities: analysis.ner_entities
-            }
-        };
+    // FORCE LOCAL ANALYSIS ONLY
+    console.log("[System] Running Standard Risk scoring...");
+
+    // 1. Run local risk scoring on all posts
+    const analyzedPosts = await Promise.all(posts.map(async p => ({
+        ...p,
+        ...(await analyzePostMultimodal(p))
+    })));
+
+    return analyzedPosts;
+
+    /* GEMINI BATCH CODE HIDDEN/DISABLED
+    const ENABLE_BATCH_AI = false;
+
+    // Always fallback to purely local analysis
+    if (!process.env.GEMINI_API_KEY || !ENABLE_BATCH_AI) {
+        console.warn("[AI] AI Analysis disabled. Using local system analysis only.");
+        return Promise.all(posts.map(async p => ({ ...p, ...(await analyzePostMultimodal(p)) })));
+    }
+
+    const BATCH_SIZE = 15; // Safe batch size
+    const DELAY_BETWEEN_BATCHES = 2500; // 2.5s delay to be nice to rate limits
+
+    let allAnalyzedPosts = [];
+
+    // 1. First, run local analysis on everything to get baseline features (phones, UPIs)
+    const locallyEnriched = await Promise.all(posts.map(async p => {
+        const local = await analyzePostMultimodal(p);
+        return { ...p, ...local, enrichmentData: { ...p.enrichmentData, ...local } };
     }));
-    return results;
+
+    // 2. Chunk for AI
+    for (let i = 0; i < locallyEnriched.length; i += BATCH_SIZE) {
+        const batch = locallyEnriched.slice(i, i + BATCH_SIZE);
+        console.log(`[AI Batch] Processing items ${i + 1} to ${i + batch.length}...`);
+
+        try {
+            const prompt = `
+            You are an expert intelligence analyst. Analyze these ${batch.length} social media posts.
+            
+            INPUT (JSON):
+            ${JSON.stringify(batch.map(p => ({ id: p._id || p.id, content: p.content })), null, 2)}
+
+            For each post, determine:
+            1. Risk Level (High, Medium, Low) - Be strict. Look for fraud, intent to harm, or illegal content.
+            2. Sentiment (Negative, Neutral, Positive).
+            3. Detailed Risk Reasoning (1 sentence).
+
+            OUTPUT: Return ONLY a JSON array, nothing else.
+            Example: [{"id": "123", "risk": "High", "sentiment": "Negative", "reason": "Scam pattern detected"}]
+            `;
+
+            const result = await generateWithRetry(prompt);
+            const text = result.response.text();
+
+            // Clean markdown if present
+            const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const aiResults = JSON.parse(cleanJson);
+
+            // Merge AI results back into batch
+            const mergedBatch = batch.map(post => {
+                const aiData = aiResults.find(r => r.id === (post._id || post.id).toString()) || {};
+                return {
+                    ...post,
+                    risk: aiData.risk || post.risk, // Prefer AI risk, fallback to local
+                    sentiment: aiData.sentiment || post.sentiment,
+                    ai_reason: aiData.reason,
+                    // Keep robust local extraction for flags
+                    enrichmentData: {
+                        ...post.enrichmentData,
+                        risk_flags: [...(post.risk_flags || []), aiData.reason ? `AI: ${aiData.reason}` : null].filter(Boolean)
+                    }
+                };
+            });
+
+            allAnalyzedPosts.push(...mergedBatch);
+
+            // Rate Limit Pause
+            if (i + BATCH_SIZE < locallyEnriched.length) {
+                console.log(`[AI Batch] Sleeping for ${DELAY_BETWEEN_BATCHES}ms...`);
+                await sleep(DELAY_BETWEEN_BATCHES);
+            }
+
+        } catch (e) {
+            console.error(`[AI Batch] Failed for batch ${i}:`, e.message);
+            // Fallback: push the locally enriched ones if AI fails
+            allAnalyzedPosts.push(...batch);
+        }
+    }
+
+    return allAnalyzedPosts;
+    */
 };
 
 
-function generateVerboseReport(keyword, totalCount, highRiskCount, topKeywords, topEntities, allPhones, allUPIs, threatLevel) {
-    const riskPercentage = totalCount > 0 ? ((highRiskCount / totalCount) * 100).toFixed(1) : 0;
-    const hasEntities = topEntities.length > 0;
-    const hasContacts = allPhones.size > 0 || allUPIs.size > 0;
-
-    let narrative = `
-        <div style="font-family: 'Georgia', serif; color: #cbd5e1; line-height: 1.8; font-size: 15px;">
-        
-        <h3 style="color: #e2e8f0; font-family: 'Inter', sans-serif; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #475569; padding-bottom: 5px;">1. Executive Overview</h3>
-        <p style="margin-bottom: 16px;">
-            This intelligence assessment provides a detailed forensic analysis of social media activity surrounding the target vector <em>"${keyword}"</em>. 
-            The automated surveillance grid successfully intercepted and processed a total of <strong>${totalCount} unique data points</strong> across monitored platforms. 
-            The primary objective of this scan was to isolate high-probability threat indicators, identify coordinated inauthentic behavior, and map potential fraud networks. 
-            Based on the aggregate data analysis, the current operational threat level is classified as <strong>${threatLevel}</strong>. 
-            Approximately <strong>${riskPercentage}%</strong> of the analyzed content has been flagged as "High Risk," warranting immediate attention from analysts and law enforcement liaisons.
-        </p>
-
-        <h3 style="color: #e2e8f0; font-family: 'Inter', sans-serif; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #475569; padding-bottom: 5px;">2. Threat Vector Analysis</h3>
-        <p style="margin-bottom: 16px;">
-            A granular inspection of the intercepted communications reveals specific patterns indicative of structured activity. 
-            The semantic analysis engine identified a recurring lexicon associated with the target query. 
-            <strong>Dominant Keywords:</strong> The most statistically significant terms observed in the dataset include ${topKeywords ? topKeywords : "general conversational fillers"}, 
-            suggesting that these concepts form the core narrative or modus operandi of the actors involved.
-            ${highRiskCount > 0
-            ? `Specifically, the detection of <strong>${highRiskCount} critical risk items</strong> highlights a tangible security concern. these items exhibited strong markers of malicious intent, including but not limited to financial solicitation, social engineering tactics, or explicit threats.`
-            : "While no critical high-risk vectors were isolated in this specific batch, the volume of chatter suggests a need for continued vigilance to detect low-level grooming or reconnaissance activity."}
-            This pattern of keyword usage is consistent with known behavioral signatures of ${threatLevel === 'CRITICAL' ? "organized cyber-fraud syndicates or coordinated disinformation campaigns." : "opportunistic actors or organic public discourse."}
-        </p>
-
-        <h3 style="color: #e2e8f0; font-family: 'Inter', sans-serif; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #475569; padding-bottom: 5px;">3. Entity & Identity Resolution</h3>
-        <p style="margin-bottom: 16px;">
-            Forensic extraction algorithms were deployed to identify actionable intelligence targets within the unstructured text data. 
-            ${hasEntities
-            ? `The system successfully resolved several key named entities. <strong>Prominent Entities:</strong> The dataset heavily references <strong>${topEntities}</strong>. These entities may represent the primary subjects of the discussion, alias accounts used by threat actors, or organizations being impersonated for credibility.`
-            : "Identity resolution algorithms did not converge on specific, high-frequency named entities in this pass, suggesting a diffuse conversation or the use of generic obfuscation techniques."}
-            
-            ${hasContacts
-            ? `Critically, the deep-dive extraction modules uncovered direct attribution data. The system isolated <strong>${allPhones.size} unique telephone numbers</strong> and <strong>${allUPIs.size} UPI (Unified Payments Interface) identifiers</strong> embedded within the posts. In the context of financial fraud investigations, these identifiers are considered high-value forensic artifacts. Cross-referencing these contacts with known offender databases is strongly recommended to establish linkage with prior cases.`
-            : "No direct financial identifiers (Phone/UPI) were openly broadcast in this sample, which implies that actors may be moving conversations to encrypted private channels (DM) before sharing sensitive payment details."}
-        </p>
-
-        <h3 style="color: #e2e8f0; font-family: 'Inter', sans-serif; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #475569; padding-bottom: 5px;">4. Strategic Recommendations</h3>
-        <p style="margin-bottom: 0;">
-            In conclusion, the intelligence picture derived from the query <em>"${keyword}"</em> indicates a <strong>${threatLevel.toLowerCase()}</strong> probability of adverse events. 
-            ${threatLevel === 'CRITICAL'
-            ? "<strong>Action Required:</strong> Immediate intervention is advised. Data preservation notices should be issued to the relevant platforms for the high-risk accounts identified. The extracted financial identifiers should be prioritized for tracing."
-            : (threatLevel === 'MEDIUM'
-                ? "<strong>Action Required:</strong> Enhanced monitoring is recommended. The situation is evolving, and while immediate harm may not be imminent, the indicators suggest a potential for escalation. Analysts should conduct a manual review of the flagged 'Medium Risk' items."
-                : "<strong>Action Required:</strong> Routine monitoring is sufficient at this stage. The current noise-to-signal ratio is high, with limited actionable threads. Periodic re-scans are advised to detect any shifts in sentiment or tactic.")}
-            This generated report serves as a preliminary assessment to guide resource allocation and further investigative steps.
-        </p>
-        </div>
-    `;
-    return narrative;
-}
+// --- REPORT GENERATION ---
 
 export const runFullProjectAnalysis = async (keyword, posts, totalCount) => {
-    console.log(`[LocalAI] Generating statistical summary for ${posts.length} posts...`);
+    // AI Summary disabled. Falling back to system summary.
+    const ENABLE_AI_SUMMARY = false;
 
-    try {
-        let highRiskCount = 0;
-        let mediumRiskCount = 0;
+    /* AI SUMMARY - HIDDEN
+    if (ENABLE_AI_SUMMARY && process.env.GEMINI_API_KEY) {
+        console.log(`[AI Summary] Generating summary for ${posts.length} posts...`);
+        try {
+            const prompt = `
+            SYSTEM PROMPT:
+            Check and summarize the following social media posts. Focus on potential risks and threats.
+            
+            INPUT:
+            ${JSON.stringify(posts.map(p => ({
+                content: p.content,
+                author: p.author,
+                risk: p.risk
+            })).slice(0, 50), null, 2)} 
+            
+            OUTPUT:
+            Provide a concise HTML summary wrapped in a <div>. Include a Threat Level and a Key Findings list.
+            `;
 
-        const allKeywords = {};
-        const allEntities = {};
-        const allPhones = new Set();
-        const allUPIs = new Set();
+            const result = await generateWithRetry(prompt);
+            const summaryHTML = result.response.text().replace(/```html/g, '').replace(/```/g, '').trim();
 
-        posts.forEach(post => {
-            if (post.risk === 'High') highRiskCount++;
-            else if (post.risk === 'Medium') mediumRiskCount++;
+            return {
+                summary: summaryHTML,
+                riskResults: posts
+            };
 
-            const intel = post.enrichmentData || {};
-
-            (intel.risk_flags || []).forEach(flag => {
-                const cleanFlag = flag.replace('Keyword: ', '').replace('Phone Detected', '').replace('UPI Detected', '').trim();
-                if (cleanFlag && !cleanFlag.startsWith('Source:')) {
-                    allKeywords[cleanFlag] = (allKeywords[cleanFlag] || 0) + 1;
-                }
-            });
-
-            (intel.ner_entities || []).forEach(entity => {
-                allEntities[entity] = (allEntities[entity] || 0) + 1;
-            });
-
-            (intel.extracted_phones || []).forEach(p => allPhones.add(p));
-            (intel.extracted_upis || []).forEach(u => allUPIs.add(u));
-        });
-
-        const topKeywordsArray = Object.entries(allKeywords).sort((a, b) => b[1] - a[1]).slice(0, 5);
-        const topKeywords = topKeywordsArray.map(k => `<b>${k[0]}</b>`).join(', ');
-
-        const topEntitiesArray = Object.entries(allEntities).sort((a, b) => b[1] - a[1]).slice(0, 3);
-        const topEntities = topEntitiesArray.map(e => e[0]).join(', ');
-
-        const highRiskPercent = totalCount > 0 ? (highRiskCount / totalCount) * 100 : 0;
-        let threatLevel = "LOW";
-        let threatColor = "#4ade80"; // Bright Green
-        let panelBg = "rgba(74, 222, 128, 0.1)"; // Green tint
-        let panelBorder = "rgba(74, 222, 128, 0.2)";
-
-        if (highRiskPercent > 10) {
-            threatLevel = "MEDIUM";
-            threatColor = "#fbbf24"; // Amber 400
-            panelBg = "rgba(251, 191, 36, 0.1)";
-            panelBorder = "rgba(251, 191, 36, 0.2)";
+        } catch (e) {
+            console.error("[AI Summary] Failed:", e);
+            // Fallback to local if AI fails
         }
-        if (highRiskPercent > 30) {
-            threatLevel = "CRITICAL";
-            threatColor = "#f87171"; // Red 400
-            panelBg = "rgba(248, 113, 113, 0.1)";
-            panelBorder = "rgba(248, 113, 113, 0.2)";
-        }
-
-        const verboseReport = generateVerboseReport(keyword, totalCount, highRiskCount, topKeywords, topEntities, allPhones, allUPIs, threatLevel);
-
-        const summaryHTML = `
-            <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: #e2e8f0; line-height: 1.6;">
-                <div style="background-color: ${panelBg}; padding: 16px; border-radius: 8px; border: 1px solid ${panelBorder}; margin-bottom: 24px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 24px;"></span>
-                        <div>
-                            <p style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: ${threatColor}; font-weight: bold;">Threat Intelligence Report</p>
-                            <p style="margin: 0; font-size: 18px; font-weight: 700; color: #f8fafc;">Threat Level: <span style="color:${threatColor};">${threatLevel}</span></p>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 24px; color: #cbd5e1;">
-                    ${verboseReport}
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
-                     <div style="background: rgba(30, 41, 59, 0.5); padding: 12px; border-radius: 6px; border: 1px solid #334155;">
-                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: bold;">Common Keywords</span>
-                        <p style="margin-top: 4px; color: #f1f5f9; font-size: 13px;">${topKeywords || "None"}</p>
-                     </div>
-                     <div style="background: rgba(30, 41, 59, 0.5); padding: 12px; border-radius: 6px; border: 1px solid #334155;">
-                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: bold;">Entities Identified</span>
-                        <p style="margin-top: 4px; color: #f1f5f9; font-size: 13px;">${topEntities || "None"}</p>
-                     </div>
-                </div>
-
-                ${highRiskCount > 0 ? `
-                <h4 style="border-bottom: 1px solid #334155; padding-bottom: 8px; margin-top: 32px; color: #f87171; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-                    🚨 Critical Threat Breakdown (${highRiskCount} Items)
-                </h4>
-                <div style="margin-top: 16px;">
-                    ${posts.filter(p => p.risk === 'High').map(p => {
-            const domain = p.sourceUrl ? (new URL(p.sourceUrl).hostname.replace('www.', '')) : p.platform.toUpperCase();
-            return `
-                        <div style="background-color: rgba(248, 113, 113, 0.05); border-left: 3px solid #f87171; padding: 12px 16px; margin-bottom: 12px; border-radius: 0 4px 4px 0;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-weight: bold; color: #f1f5f9;">@${p.username}</span>
-                                    ${p.sourceUrl ?
-                    `<a href="${p.sourceUrl}" target="_blank" style="font-weight: normal; color: #60a5fa; font-size: 12px; text-decoration: none; border: 1px solid #1e293b; padding: 2px 6px; border-radius: 4px; background: rgba(30,41,59,0.5);">🔗 ${domain}</a>`
-                    : `<span style="font-weight: normal; color: #94a3b8; font-size: 12px;">(${p.platform?.toUpperCase()})</span>`
-                }
-                                </div>
-                                <span style="font-size: 12px; color: #64748b;">${new Date(p.timestamp).toLocaleDateString()}</span>
-                            </div>
-                            <p style="margin: 0; color: #cbd5e1; font-size: 13px; font-style: italic; font-family: 'Georgia', serif;">"${p.content.length > 200 ? p.content.substring(0, 200) + '...' : p.content}"</p>
-                            ${(p.enrichmentData?.extracted_phones?.length > 0 || p.enrichmentData?.extracted_upis?.length > 0) ? `
-                                <div style="margin-top: 8px; font-size: 11px; background-color: rgba(15, 23, 42, 0.5); padding: 4px 8px; border-radius: 4px; display: inline-block; color: #f8fafc; border: 1px solid #334155;">
-                                    <strong>Extracted:</strong> ${[... (p.enrichmentData.extracted_phones || []), ... (p.enrichmentData.extracted_upis || [])].join(', ')}
-                                </div>
-                            ` : ''}
-                        </div>
-                    `}).join('')}
-                </div>
-                ` : ''}
-            </div>
-        `;
-
-        return {
-            summary: summaryHTML,
-            riskResults: posts
-        };
-
-    } catch (error) {
-        console.error("Local Analysis Error:", error);
-        return {
-            summary: "Error generating statistical summary.",
-            riskResults: []
-        };
     }
+    */
+
+    console.log(`[LocalAI] Generating detailed system summary for ${posts.length} posts...`);
+
+    let highRiskCount = 0;
+    const allKeywords = {};
+    const highRiskUsers = []; // Stores { username, platform, riskScore }
+
+    posts.forEach(post => {
+        if (post.risk === 'High') {
+            highRiskCount++;
+            highRiskUsers.push({
+                username: post.username || post.author || 'Unknown',
+                platform: post.platform || 'Unknown',
+                riskScore: post.risk_score || 90
+            });
+        }
+
+        const intel = post.enrichmentData || {};
+        (intel.risk_flags || []).forEach(flag => {
+            const clean = flag.replace('AI: ', '').replace('Keyword: ', '').trim();
+            if (clean && clean !== 'Phone Detected' && clean !== 'UPI Detected') {
+                allKeywords[clean] = (allKeywords[clean] || 0) + 1;
+            }
+        });
+    });
+
+    const highRiskPercent = totalCount > 0 ? (highRiskCount / totalCount) * 100 : 0;
+
+    let threatLevel = "LOW";
+    if (highRiskPercent > 10) threatLevel = "MEDIUM";
+    if (highRiskPercent > 30) threatLevel = "CRITICAL";
+
+    // --- GENERATE NARRATIVE (Target ~250 words) ---
+
+    // 1. Top Keywords
+    const sortedKeywords = Object.entries(allKeywords)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([k, v]) => k);
+
+    // 2. Top High Risk Users (Unique)
+    const uniqueHighRiskUsers = [...new Set(highRiskUsers.map(u => `${u.username} (${u.platform})`))].slice(0, 8);
+
+    // 3. Construct Narrative Paragraphs
+    const introParams = [
+        `The automated intelligence scan for "<strong>${keyword}</strong>" has completed processing ${totalCount} items.`,
+        `The system has identified <strong>${highRiskCount} high-risk artifacts</strong>, representing ${highRiskPercent.toFixed(1)}% of the total dataset.`,
+        `Based on the density of threat indicators, the overall threat level is assessed as <strong>${threatLevel}</strong>.`
+    ];
+
+    const keywordParams = sortedKeywords.length > 0
+        ? `Primary risk factors include a high frequency of terms such as <em>"${sortedKeywords.join('", "')}"</em>. These keywords are often associated with illicit activities, financial fraud, or coordinated campaigns.`
+        : `No specific recurring risk keywords were dominant in this dataset, though individual high-risk items were flagged based on isolated indicators.`;
+
+    const userParams = uniqueHighRiskUsers.length > 0
+        ? `Several accounts were flagged for distributing high-risk content. Notable entities include <strong>${uniqueHighRiskUsers.join(', ')}</strong>. Monitoring these accounts is recommended to identify potential bot networks or organized groups.`
+        : `No specific recurrent high-risk accounts were isolated in this batch.`;
+
+    // const conclusionParams = `This automated summary is generated based on strictly defined risk heuristics including keyword matching, pattern recognition, and known threat indicators. Immediate review of the flagged items is advised to determine the validity of the threats and take appropriate mitigation actions.`;
+    const conclusionParams = ``;
+
+    // Combine into a roughly 200-300 word text block
+    const fullNarrative = `
+        <p class="mb-4">${introParams.join(' ')}</p>
+        <p class="mb-4">${keywordParams} ${userParams}</p>
+        <p class="text-sm text-slate-400 border-l-2 border-slate-600 pl-4 italic">${conclusionParams}</p>
+    `;
+
+    const summaryHTML = `
+        <div class="p-6 bg-slate-900/50 rounded-xl border border-slate-700 font-sans">
+        
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Threat Level</p>
+                    <p class="text-2xl font-black ${threatLevel === 'CRITICAL' ? 'text-red-500' : threatLevel === 'MEDIUM' ? 'text-orange-500' : 'text-emerald-500'} tracking-tight">${threatLevel}</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">High Risk Items</p>
+                    <p class="text-2xl font-bold text-white">${highRiskCount} <span class="text-sm font-normal text-slate-500">of ${totalCount}</span></p>
+                </div>
+                 <div class="bg-gray-700 p-4 rounded-lg">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Top Risk Vector</p>
+                    <p class="text-lg font-bold text-white truncate" title="${sortedKeywords[0] || 'None'}">${sortedKeywords[0] || 'None'}</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Flagged Accounts</p>
+                    <p class="text-2xl font-bold text-white">${uniqueHighRiskUsers.length}</p>
+                </div>
+            </div>
+
+            <div class="text-slate-300 text-sm leading-7 space-y-4">
+                ${fullNarrative}
+            </div>
+            
+             <div class="mt-6 pt-4 border-t-4 border-gray-700 flex flex-wrap gap-2">
+                ${sortedKeywords.map(k => `<span class="px-2 py-1 bg-red-900/20 border border-red-900/50 text-red-400 text-xs rounded">${k}</span>`).join('')}
+            </div>
+        </div>
+    `;
+
+    return {
+        summary: summaryHTML,
+        riskResults: posts
+    };
 };

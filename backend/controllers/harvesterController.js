@@ -1,5 +1,6 @@
 import { startHarvester, stopHarvester } from '../services/harvesterManager.js';
 import { projects as projectsCollection } from '../services/db.js';
+import axios from 'axios';
 
 // POST /api/harvesters/stop
 export const stopHarvesterJob = async (req, res) => {
@@ -56,6 +57,7 @@ export const startHarvesterJob = async (req, res) => {
 
   try {
     const platformToStart = platform || 'twitter';
+    // Validate platform if strictly needed, but harvester handles errors.
     await startHarvester(id, name, keywords, platformToStart);
 
     // UPDATE DB TO "Running"
@@ -74,3 +76,4 @@ export const startHarvesterJob = async (req, res) => {
     res.status(500).json({ error: "Failed to start harvester." });
   }
 };
+

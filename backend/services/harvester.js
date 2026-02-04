@@ -182,23 +182,68 @@ const PLATFORM_CONFIGS = {
             };
         }
     },
-    'google': {
-        baseUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
-        selector: 'div.g',
-        extract: async (el, page) => {
-            const titleEl = await el.$('h3');
-            const linkEl = await el.$('a');
+    // 'google': {
+    //     baseUrl: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+    //     selector: 'div.g',
+    //     extract: async (el, page) => {
+    //         const titleEl = await el.$('h3');
+    //         const linkEl = await el.$('a');
 
-            const snippet = await page.evaluate(el => {
-                const s = el.querySelector('div.VwiC3b, div.yD9v9d, div[style*="-webkit-line-clamp"]');
-                return s ? s.innerText : '';
-            }, el);
+    //         const snippet = await page.evaluate(el => {
+    //             const s = el.querySelector('div.VwiC3b, div.yD9v9d, div[style*="-webkit-line-clamp"]');
+    //             return s ? s.innerText : '';
+    //         }, el);
+
+    //         const title = titleEl ? await page.evaluate(el => el.innerText, titleEl) : 'Untitled';
+    //         const url = linkEl ? await page.evaluate(el => el.href, linkEl) : null;
+
+    //         return {
+    //             author: 'Google Web',
+    //             username: url ? new URL(url).hostname : 'Web',
+    //             content: snippet,
+    //             title: title,
+    //             timestamp: new Date().toISOString(),
+    //             url: url
+    //         };
+    //     }
+    // },
+    // 'github': {
+    //     baseUrl: (q) => `https://github.com/search?q=${encodeURIComponent(q)}&type=repositories`,
+    //     selector: 'div[data-testid="results-list"] > div, .repo-list-item, div.Box-row',
+    //     extract: async (el, page) => {
+    //         const titleEl = await el.$('h3 a, span a');
+    //         const descEl = await el.$('span[class*="Text"], div[class*="Text"]');
+    //         const dateEl = await el.$('relative-time');
+
+    //         const href = titleEl ? await page.evaluate(el => el.href, titleEl) : null;
+    //         const repoText = titleEl ? await page.evaluate(el => el.innerText, titleEl) : 'Unknown';
+    //         const description = descEl ? await page.evaluate(el => el.innerText, descEl) : '';
+    //         const timestamp = dateEl ? await page.evaluate(el => el.getAttribute('datetime'), dateEl) : new Date().toISOString();
+
+    //         const author = repoText.split('/')[0] || 'GitHub User';
+
+    //         return {
+    //             author: author.trim(),
+    //             username: author.trim(),
+    //             content: `Repository: ${repoText}\nDescription: ${description}`,
+    //             timestamp: timestamp,
+    //             url: href
+    //         };
+    //     }
+    // },
+    'duckduckgo': {
+        baseUrl: (q) => `https://duckduckgo.com/?q=${encodeURIComponent(q)}&t=h_&ia=web`,
+        selector: 'article[data-testid="result"]',
+        extract: async (el, page) => {
+            const titleEl = await el.$('a[data-testid="result-title-a"]');
+            const snippetEl = await el.$('div[data-testid="result-snippet"]');
 
             const title = titleEl ? await page.evaluate(el => el.innerText, titleEl) : 'Untitled';
-            const url = linkEl ? await page.evaluate(el => el.href, linkEl) : null;
+            const url = titleEl ? await page.evaluate(el => el.href, titleEl) : null;
+            const snippet = snippetEl ? await page.evaluate(el => el.innerText, snippetEl) : '';
 
             return {
-                author: 'Google Web',
+                author: 'DuckDuckGo Web',
                 username: url ? new URL(url).hostname : 'Web',
                 content: snippet,
                 title: title,
@@ -206,7 +251,7 @@ const PLATFORM_CONFIGS = {
                 url: url
             };
         }
-    },
+    }
 
 };
 
@@ -239,7 +284,10 @@ const waitForAbortable = (promise, signal) => {
 export async function runUniversalScraper(platform, query, limit = 50, sourceTag, onBatchFound, abortSignal) {
     if (platform === 'x') platform = 'twitter';
     const config = PLATFORM_CONFIGS[platform];
-    if (!config && platform !== 'github') throw new Error(`Platform '${platform}' not supported yet.`);
+    if (!config) {
+        console.warn(`[Harvester] Platform '${platform}' is disabled or not supported. Skipping.`);
+        return 0;
+    }
 
     const logPrefix = `[${platform.toUpperCase()}:${sourceTag}]`;
     console.log(`${logPrefix} Starting generic scrape for: ${query}`);
@@ -257,71 +305,9 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
         }
     };
 
-    // --- GITHUB API MODE (EXCLUSIVE) ---
-    if (platform === 'github') {
-        if (!process.env.GITHUB_TOKEN) {
-            console.error(`${logPrefix} ❌ GitHub Token missing. Please add GITHUB_TOKEN to .env. Puppeteer fallback is disabled.`);
-            return totalCount;
-        }
-
-        console.log(`${logPrefix} 🔑 GitHub API Token detected. Using Code Search API.`);
-        try {
-            // "code" search finds secrets inside files
-            const apiUrl = `https://api.github.com/search/code?q=${encodeURIComponent(query)}&per_page=${Math.min(limit, 100)}`;
-            const response = await axios.get(apiUrl, {
-                headers: {
-                    'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-                    'Accept': 'application/vnd.github.v3+json'
-                }
-            });
-
-            const items = response.data.items || [];
-            console.log(`${logPrefix} found ${items.length} files.`);
-
-            for (const item of items) {
-                if (totalCount >= limit) break;
-
-                const platformId = `gh_${item.repository.id}_${item.sha}`;
-
-                const postData = {
-                    twitterPostId: platformId,
-                    platform: 'github',
-                    sourceUrl: item.html_url,
-                    author: item.repository.owner.login || 'Unknown',
-                    content: `File: ${item.path}\nRepo: ${item.repository.full_name}\n\n(Click Source URL to view code)`,
-                    timestamp: new Date().toISOString(),
-                    source: sourceTag,
-                    sourceTag: sourceTag,
-                    severity: 'New'
-                };
-
-                const result = await postsCollection.updateOne(
-                    { twitterPostId: postData.twitterPostId },
-                    { $set: postData },
-                    { upsert: true }
-                );
-
-                if (result.upsertedId || result.modifiedCount > 0) {
-                    currentBatch.push({ ...postData, _id: result.upsertedId });
-                    totalCount++;
-                }
-            }
-
-            await flushBatch("Job Complete");
-            return totalCount;
-
-        } catch (error) {
-            console.error(`${logPrefix} GitHub API Failed: ${error.response ? error.response.status : error.message}`);
-            if (error.response && error.response.status === 403) {
-                console.log(`${logPrefix} ⚠️ Rate Limit exceeded or Token invalid.`);
-            }
-            // Fallback to Puppeteer? User said "instead of puppeteer", so we return here to avoid duplicates/waste.
-            return totalCount;
-        }
-    }
-
     // --- TELEGRAM API MODE ---
     let apiSuccess = false;
+
     const tgSession = process.env.TELEGRAM_SESSION || process.env["TELEGRAM_SESSION "];
 
     if (platform === 'telegram' && tgSession) {
@@ -449,7 +435,7 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
 
             // CRITICAL: If session exists but failed, don't fall back to web scraper 
             // as it will likely just time out or get blocked.
-            console.log(`${logPrefix} 🛑 API session is present but failed. Aborting to avoid flaky web fallback.`);
+            console.log(`${logPrefix} API session is present but failed. Aborting to avoid flaky web fallback.`);
             return totalCount;
         }
     } else if (platform === 'telegram') {
@@ -458,7 +444,6 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
 
     if (apiSuccess) return totalCount;
 
-    // --- WEB SCRAPER MODE ---
     let browser = null;
 
     try {
@@ -468,20 +453,35 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu',
-            '--disable-blink-features=AutomationControlled', // Critical for FB
+            '--disable-blink-features=AutomationControlled',
             '--disable-notifications'
         ];
+
+        if (process.env.PROXY_URL) {
+            console.log(`${logPrefix} Using Proxy: ${process.env.PROXY_URL}`);
+            launchArgs.push(`--proxy-server=${process.env.PROXY_URL}`);
+        }
 
         const profileDir = path.join(USERDATADIR, `${platform}_session`);
 
         browser = await puppeteer.launch({
-            // Run visible (non-headless) for Google & Socials to allow manual login/CAPTCHA solving
-            headless: (platform === 'google' || platform === 'facebook' || platform === 'linkedin' || platform === 'instagram' || platform === 'twitter' || platform === 'github') ? false : true,
+            // headless: (platform === 'google' || platform === 'facebook' || platform === 'linkedin' || platform === 'instagram' || platform === 'twitter' || platform === 'github' || platform === 'duckduckgo') ? true : true,
+            headless: process.env.HEADLESS === 'true' ? true : true,
+            // headless: platform ===  'google' ? false : false,
             executablePath: executablePath(),
             userDataDir: profileDir,
             args: launchArgs,
             ignoreDefaultArgs: ['--enable-automation']
         });
+
+        if (process.env.PROXY_USERNAME && process.env.PROXY_PASSWORD) {
+            const page = await browser.newPage();
+            await page.authenticate({
+                username: process.env.PROXY_USERNAME,
+                password: process.env.PROXY_PASSWORD
+            });
+            await page.close();
+        }
 
         const page = await browser.newPage();
 
@@ -611,7 +611,7 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                     break;
                 }
 
-                const selector = platform === 'google' ? 'div.g, div.tF2Cxc, div.MjjYud' : config.selector;
+                const selector = (platform === 'google' || platform === 'duckduckgo') ? (platform === 'google' ? 'div.g, div.tF2Cxc, div.MjjYud' : config.selector) : config.selector;
 
                 try {
                     // Login / Popup Handling
@@ -626,16 +626,17 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                         }
                     }
 
-                    const waitTimeout = (totalCount === 0) ? 60000 : 10000;
                     try {
-                        await waitForAbortable(page.waitForSelector(selector, { timeout: waitTimeout }), abortSignal);
+                        const loadingSelector = platform === 'github' ? 'div[data-testid="results-list"]' : selector;
+                        await waitForAbortable(page.waitForSelector(loadingSelector, { timeout: waitTimeout }), abortSignal);
                     } catch (err) {
                         if (platform === 'google') {
                             const debugPath = path.join(EVIDENCE_DIR, 'debug_google_crash.png');
-                            await page.screenshot({ path: debugPath });
+                            try { await page.screenshot({ path: debugPath }); } catch (e) { }
                             console.error(`${logPrefix} Saved debug screenshot to /evidence/debug_google_crash.png`);
                         }
-                        throw err;
+                        console.warn(`${logPrefix} Wait for selector '${selector}' timed out or failed: ${err.message}`);
+                        // Don't throw, just let the flow continue to check for elements (which will be 0) and handle "No results" logic
                     }
                 } catch (e) {
                     if (abortSignal && abortSignal.aborted) break;
@@ -677,8 +678,8 @@ export async function runUniversalScraper(platform, query, limit = 50, sourceTag
                         let extracted = await config.extract(el, page);
                         if (!extracted.content && !extracted.url) continue;
 
-                        // --- GOOGLE DEEP CRAWL ---
-                        if (platform === 'google' && extracted.url) {
+                        // --- GOOGLE & DUCKDUCKGO DEEP CRAWL ---
+                        if ((platform === 'google' || platform === 'duckduckgo') && extracted.url) {
                             console.log(`${logPrefix} Deep Crawling: ${extracted.url}`);
                             const detailPage = await browser.newPage();
                             try {

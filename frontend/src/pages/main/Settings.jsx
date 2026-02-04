@@ -167,7 +167,7 @@ function ApiSettingsPanel() {
                 <div>
                   <label className="block text-xs uppercase text-gray-500 font-bold mb-2">Platform Scope</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {['all', 'twitter', 'facebook', 'github', 'reddit', 'telegram', 'google', 'linkedin'].map(p => (
+                    {['all', 'twitter', 'facebook', 'reddit', 'telegram', 'linkedin'].map(p => (
                       <label key={p} className="flex items-center gap-2 p-2 rounded bg-black/40 border border-gray-600 cursor-pointer hover:bg-gray-800 transition-colors">
                         <input
                           type="checkbox"
