@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../services/apiService';
 
@@ -51,6 +51,26 @@ export default function Dashboard() {
   return (
     <div className="p-6 max-w-[1600px] -mt-9 mx-auto space-y-6 animate-in fade-in duration-500">
 
+      {/* 1. Safety Banner */}
+      {data.automated.some(p => p.status === 'Running') && (
+        <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl flex items-center justify-between animate-pulse">
+          <div className="flex items-center gap-4">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <div>
+              <h3 className="text-sm font-bold text-red-500">Active Investigation in Progress</h3>
+              <p className="text-xs text-red-500/80">
+                System is currently locked. You must wait for the current case to complete or stop it manually before starting a new one.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/Case')} // Redirect to Case Management
+            className="px-4 py-2 bg-red-500/20 text-red-500 border border-red-500/50 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-red-500 hover:text-white transition-all"
+          >
+            Manage Case
+          </button>
+        </div>
+      )}
 
       {/* 2. Key Metrics & Health */}
       <StatCards data={data} />

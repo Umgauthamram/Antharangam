@@ -18,6 +18,7 @@ const PLATFORM_COLORS = {
     'linkedin': '#0A66C2',
     'telegram': '#0088CC',
     'google': '#4285F4',
+    'duckduckgo': '#DE5833',
     'github': '#ffffffff',
     'Unknown': '#6B7280'
 };
@@ -83,14 +84,7 @@ export default function IntelCenter() {
 
             {/* Header & Global Search */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-                        <ShieldCheck className="w-8 h-8 text-peacock-500" /> Crystal Intelligence Center
-                    </h2>
-                    <p className="text-gray-400 text-sm mt-1">
-                        Advanced threat monitoring and officer intervention workspace.
-                    </p>
-                </div>
+
 
                 <div className="flex flex-1 justify-end items-center gap-4">
                     <MagicSearch searchQuery={searchQuery} setSearchQuery={setSearchQuery} filters={filters} setFilters={setFilters} />
@@ -391,7 +385,7 @@ function MagicSearch({ searchQuery, setSearchQuery, filters, setFilters }) {
                                     All
                                 </motion.button>
 
-                                {['twitter', 'facebook', 'instagram', 'telegram', 'reddit', 'linkedin', 'google', 'github'].map(platform => (
+                                {['twitter', 'facebook', 'instagram', 'telegram', 'reddit', 'linkedin', 'google', 'duckduckgo', 'github'].map(platform => (
                                     <motion.button
                                         key={platform}
                                         whileTap={{ scale: 0.95 }}

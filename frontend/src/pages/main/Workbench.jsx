@@ -18,8 +18,9 @@ const ALL_POSSIBLE_SOURCES = [
     { id: 'instagram', name: 'Instagram', icon: Instagram, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
     { id: 'linkedin', name: 'LinkedIn', icon: Linkedin, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
     { id: 'telegram', name: 'Telegram', icon: Send, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
-    { id: 'github', name: 'GitHub', icon: Github, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
-    { id: 'google', name: ' Web', icon: Globe, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    // { id: 'github', name: 'GitHub', icon: Github, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    // { id: 'google', name: ' Web', icon: Globe, enabled: true, color: 'text-white', bg: 'bg-peacock-600', ring: 'ring-peacock-600' },
+    { id: 'duckduckgo', name: 'DuckDuckGo', icon: Globe, enabled: true, color: 'text-white', bg: 'bg-orange-600', ring: 'ring-orange-600' },
 ];
 
 // function OCRViewer({ text }) {
@@ -58,20 +59,6 @@ function getSourceIcon(sourceId) {
     const source = ALL_POSSIBLE_SOURCES.find(s => s.id === sourceId);
     return source ? source.icon : FileText;
 }
-
-// function TabButton({ title, active, onClick }) {
-//     return (
-//         <button
-//             onClick={onClick}
-//             className={`px-6 py-3 text-sm font-medium transition-colors ${active
-//                 ? 'border-b-4 rounded border-peacock-500 text-peacock-500'
-//                 : 'text-secondary hover:text-primary'
-//                 }`}
-//         >
-//             {title}
-//         </button>
-//     );
-// }
 
 function SourceControlModal({ project, onClose, onUpdate }) {
     const projectSourcesData = ALL_POSSIBLE_SOURCES.map(staticSource => {
@@ -172,6 +159,7 @@ export default function Workbench() {
     const [projects, setProjects] = useState([]);
     const [isProjectsLoading, setIsProjectsLoading] = useState(true);
     const [isAnalysisLoading, setIsAnalysisLoading] = useState(false);
+    const [search, setSearch] = useState('');
     const [isDarkMode] = useDarkMode();
 
     const location = useLocation();
@@ -392,7 +380,7 @@ export default function Workbench() {
                         isLoading={isProjectsLoading}
                         onViewAnalysis={handleViewAnalysis}
                         onStopProject={handleStopProject}
-                        type={'Automated'}
+                        search={search}
                     />
                 );
         }
@@ -401,27 +389,72 @@ export default function Workbench() {
 
     return (
         <div className="space-y-6">
-            {/* Manual Strike Modal Removed */}
             {isHarvesterModalOpen && (
                 <NewHarvesterModal
                     onClose={() => setIsHarvesterModalOpen(false)}
                     onCreate={handleRunHarvester}
                     isDarkMode={isDarkMode}
-                    activeProject={projects.find(p => p.type === 'Automated' && p.status === 'Running')}
                 />
             )}
 
             {view === 'list' && (
                 <>
-                    <div className="flex items-center justify-between">
-                        <div><h1 className="text-3xl font-bold mb-1 text-primary">Case Management</h1></div>
+                    <div className="flex items-center justify-between mb-6">
+                        {/* LEFT: Search Bar */}
+                        <div className="relative w-full max-w-md">
+                            <input
+                                type="text"
+                                placeholder="Search cases by name, ID or keyword..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="w-full p-3 pl-10 text-sm font-medium rounded-xl bg-subtle border border-primary focus:border-peacock-500 focus:ring-1 focus:ring-peacock-500 focus:outline-none text-primary transition-all shadow-sm"
+                            />
+                            <Search className="w-4 h-4 text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
+                        </div>
+
+                        {/* RIGHT: Actions */}
                         <div className="flex gap-4">
-                            <button onClick={() => setIsHarvesterModalOpen(true)} className="flex items-center px-4 py-2 font-medium tracking-wide text-white capitalize transition-colors duration-300 transform bg-peacock-600 rounded-lg hover:bg-peacock-500 focus:outline-none">
-                                <Plus className="w-5 h-5 mr-1" /> New Case
+                            <button
+                                onClick={() => {
+                                    const activeProject = projects.find(p => p.type === 'Automated' && p.status === 'Running');
+                                    if (activeProject) {
+                                        toast.custom((t) => (
+                                            <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-2xl rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-red-500/20`}>
+                                                <div className="flex-1 w-0 p-4">
+                                                    <div className="flex items-start">
+                                                        <div className="flex-shrink-0 pt-0.5">
+                                                            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                                                                <AlertTriangle className="h-6 w-6 text-red-600" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="ml-3 flex-1">
+                                                            <p className="text-sm font-bold text-gray-900">
+                                                                Unable to Initiate Case
+                                                            </p>
+                                                            <p className="mt-1 text-sm text-gray-500">
+                                                                An active investigation <span className="font-mono text-red-500 font-bold bg-red-50 px-1 rounded">{activeProject.name}</span> is currently in progress.
+                                                            </p>
+                                                            <p className="mt-2 text-xs text-gray-400">
+                                                                Please conclude the active case before starting a new one.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex border-l border-gray-200">
+
+                                                </div>
+                                            </div>
+                                        ), { duration: 5000 });
+                                        return;
+                                    }
+                                    setIsHarvesterModalOpen(true);
+                                }}
+                                className="flex items-center px-5 py-2.5 font-bold tracking-wide text-white capitalize transition-all duration-300 transform bg-peacock-600 rounded-xl hover:bg-peacock-500 hover:shadow-lg hover:shadow-peacock-600/20 active:scale-95 focus:outline-none"
+                            >
+                                <Plus className="w-5 h-5 mr-2" /> New Case
                             </button>
                         </div>
                     </div>
-                    {/* Tab Selection Removed - showing only Automated Projects */}
                     <div className="mt-8">{renderContent()}</div>
                 </>
             )}
@@ -534,7 +567,7 @@ function NewStrikeModal({ onClose, onScrape, isDarkMode }) {
 
 
 
-function NewHarvesterModal({ onClose, onCreate, isDarkMode, activeProject }) {
+function NewHarvesterModal({ onClose, onCreate, isDarkMode }) {
     const [projectName, setProjectName] = useState('');
     const [keywords, setKeywords] = useState('');
     const [investigator, setInvestigator] = useState('');
@@ -593,17 +626,7 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode, activeProject }) {
                     </button>
                 </div>
 
-                {activeProject && (
-                    <div className="mx-8 mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-4 animate-pulse">
-                        <AlertTriangle className="w-6 h-6 text-red-500" />
-                        <div>
-                            <p className="text-sm font-bold text-red-500">Active Case Detected</p>
-                            <p className="text-xs text-red-500/80">
-                                You must stop <strong>"{activeProject.name}"</strong> before initiating a new case.
-                            </p>
-                        </div>
-                    </div>
-                )}
+
 
                 {/* Content Grid */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-8 pb-8">
@@ -694,10 +717,10 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode, activeProject }) {
                                     <div className="mt-8">
                                         <button
                                             type="submit"
-                                            disabled={!projectName || !keywords || activeProject}
+                                            disabled={!projectName || !keywords}
                                             className="w-full py-4 text-sm font-bold text-white uppercase tracking-widest rounded-xl bg-peacock-600 hover:bg-peacock-500 hover:shadow-lg hover:shadow-peacock-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-[0.98]"
                                         >
-                                            {activeProject ? 'Deconfliction Required' : 'Initiate Case'}
+                                            Initiate Case
                                         </button>
                                     </div>
                                 )}
@@ -711,8 +734,7 @@ function NewHarvesterModal({ onClose, onCreate, isDarkMode, activeProject }) {
     );
 }
 
-function ProjectList({ projects, isLoading, onViewAnalysis, onStopProject, type }) {
-    const [search, setSearch] = useState('');
+function ProjectList({ projects, isLoading, onViewAnalysis, onStopProject, search }) {
 
     const getStatusClass = (status) => {
         if (status === 'Running') return 'text-blue-700 bg-blue-50 border border-blue-200';
@@ -728,17 +750,7 @@ function ProjectList({ projects, isLoading, onViewAnalysis, onStopProject, type 
 
     return (
         <div className="bg-subtle rounded-xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-primary bg-primary/30">
-                <div className="relative w-full max-w-sm">
-                    <input
-                        type="text"
-                        placeholder="Search cases by name, ID or keyword..."
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="w-full p-2.5 pl-10 text-sm rounded-lg bg-gray-700 border-primary focus:border-peacock-500 focus:outline-none text-primary"
-                    />
-                    <Search className="w-4 h-4 text-secondary absolute left-3 top-1/2 -translate-y-1/2" />
-                </div>
-            </div>
+            {/* Search Input Removed from here */}
 
             <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-primary">
@@ -1306,7 +1318,8 @@ function AnalysisResults({ project, initialData, onBack, onRefreshData, onProjec
                     <div className="bg-subtle rounded-xl shadow-sm  p-6">
                         <div className="flex justify-between items-center mb-4">
                             <h4 className="flex items-center text-lg font-bold text-primary">
-                                <Bot className="w-5 h-5 mr-2 text-peacock-500" /> Intelligence Summary
+                                <span className="w-2 h-8 bg-peacock-500 rounded-full mr-2"></span>
+                                 Intelligence Summary
                             </h4>
                             <button onClick={handleGenerateSummaryAndRisk} disabled={isSummarizing} className="text-xs font-bold text-peacock-600 bg-peacock-100 hover:bg-peacock-200 px-3 py-1.5 rounded-lg hover:underline disabled:opacity-50">
                                 {isSummarizing ? 'Analyzing...' : 'Refresh AI Analysis'}

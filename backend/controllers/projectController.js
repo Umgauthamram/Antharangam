@@ -187,6 +187,67 @@ export const createAutomatedProject = async (req, res) => {
       });
     }
 
+    // --- CACHING LOGIC ---
+    // Check if a similar COMPLETED project exists
+    const cachedProject = await projectsCollection.findOne({
+      keyword: keywords, // Exact string match for now
+      status: "Completed",
+      type: "Automated"
+    }, { sort: { createdAt: -1 } });
+
+    if (cachedProject) {
+      console.log(`[Cache] Found existing project ${cachedProject.projectId} for keywords: ${keywords}`);
+
+      const projectId = new ObjectId().toHexString();
+      const newProject = {
+        _id: new ObjectId(projectId),
+        projectId: projectId,
+        name: projectName,
+        keyword: keywords,
+        status: "Completed", // Set immediately to completed
+        caseStatus: "Open", // Forensic Case Status
+        investigator: investigator || "Unknown",
+        legalAuth: legalAuth || "OSINT",
+        caseType: caseType || "General",
+        postCount: cachedProject.postCount || 0,
+        summary: cachedProject.summary || null,
+        createdAt: new Date(),
+        type: "Automated",
+        sources: sources,
+        evidenceHash: null,
+        cachedFrom: cachedProject.projectId // Track lineage
+      };
+
+      const result = await projectsCollection.insertOne(newProject);
+
+      // Copy posts
+      const sourceIdOld = `harvester-${cachedProject.projectId}`;
+      const newSourceId = `harvester-${projectId}`;
+
+      // Find old posts
+      const oldPosts = await postsCollection.find({ source: sourceIdOld }).toArray();
+
+      if (oldPosts.length > 0) {
+        const newPosts = oldPosts.map(p => {
+          const { _id, ...rest } = p; // remove old _id
+          return {
+            ...rest,
+            source: newSourceId,
+            projectId: projectId,
+            scrapedAt: new Date() // Refresh timestamp for "newness" feel? Or keep original? User said "provide the result". Let's keep original data but maybe add a cached note.
+          };
+        });
+
+        if (newPosts.length > 0) {
+          await postsCollection.insertMany(newPosts);
+          console.log(`[Cache] Copied ${newPosts.length} posts from ${sourceIdOld} to ${newSourceId}`);
+        }
+      }
+
+      return res.status(201).json(newProject);
+    }
+    // --- END CACHING LOGIC ---
+
     const projectId = new ObjectId().toHexString();
     const newProject = {
       _id: new ObjectId(projectId),
@@ -342,10 +403,9 @@ export const generateProjectSummary = async (req, res) => {
     // --- STEP 3: GENERATE SUMMARY ---
     // Use the ENRICHED posts for the summary so stats match DB
     let finalSummary = project.summary;
-    const summaryPosts = samplePosts(enrichedPosts, SUMMARY_SAMPLE_SIZE);
-
     // runFullProjectAnalysis (Local) uses the risk data we just generated
-    const analysis = await runFullProjectAnalysis(project.keyword, summaryPosts, enrichedPosts.length);
+    // FIXED: Use ALL enriched posts for summary, not a sample, to ensure counts match
+    const analysis = await runFullProjectAnalysis(project.keyword, enrichedPosts, enrichedPosts.length);
     finalSummary = analysis.summary;
 
     await projectsCollection.updateOne(
